@@ -16,6 +16,14 @@ pip install -r requirements.txt
 ```
 
 3. **Configurar el token de Telegram:**
+
+Opción A - Usar archivo .env (recomendado):
+```bash
+# El archivo .env ya está creado con el token configurado
+# Solo asegúrate de que esté presente en el directorio raíz
+```
+
+Opción B - Variable de entorno:
 ```bash
 export TELEGRAM_TOKEN='tu_token_del_botfather'
 ```
@@ -62,6 +70,8 @@ chatbot-recordatorios/
 ├── scheduler.py     # Gestión de recordatorios programados
 ├── db.py           # Funciones de base de datos
 ├── requirements.txt # Dependencias
+├── .env            # Variables de entorno (no se commitea)
+├── .gitignore      # Archivos a ignorar por git
 └── README.md       # Este archivo
 ```
 
@@ -78,6 +88,9 @@ Configurado para Argentina (America/Argentina/Buenos_Aires). Puedes cambiar la z
 ### Variables de entorno:
 
 - `TELEGRAM_TOKEN` (requerida): Token del bot de Telegram
+
+**📁 Archivo .env:**
+El proyecto incluye un archivo `.env` con las variables configuradas. Este archivo contiene información sensible y está excluido del control de versiones por seguridad.
 
 ### Personalización:
 

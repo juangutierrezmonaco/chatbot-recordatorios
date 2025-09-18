@@ -4,6 +4,7 @@ import os
 import logging
 import sys
 import asyncio
+from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram.error import InvalidToken
 import db
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Función principal del bot."""
+
+    # Cargar variables de entorno desde .env
+    load_dotenv()
 
     # Obtener token del bot
     token = os.getenv('TELEGRAM_TOKEN')
