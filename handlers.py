@@ -56,7 +56,7 @@ async def recordar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     texto_completo = ' '.join(context.args)
-    resultado = await procesar_recordatorio(update, texto_completo)
+    resultado = await procesar_recordatorio(update, context, texto_completo)
 
 async def lista_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja el comando /lista."""
@@ -107,13 +107,13 @@ async def mensaje_libre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     palabras_clave = ['recordar', 'recordame', 'aviso', 'avisame', 'haceme acordar', 'acordar']
 
     if any(palabra in texto for palabra in palabras_clave):
-        await procesar_recordatorio(update, update.message.text)
+        await procesar_recordatorio(update, context, update.message.text)
     else:
         await update.message.reply_text(
             "🤔 No entiendo. Usa /start para ver cómo crear recordatorios."
         )
 
-async def procesar_recordatorio(update: Update, texto: str):
+async def procesar_recordatorio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto: str):
     """Procesa un recordatorio desde comando o lenguaje natural."""
     chat_id = update.effective_chat.id
 
