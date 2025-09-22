@@ -588,6 +588,75 @@ def _smart_hour_parse(hour: int, minute: int, now: datetime) -> datetime:
             else:
                 return am_time + timedelta(days=1)
 
+def _smart_weekday_day_parse(weekday: str, day: int, now: datetime) -> datetime:
+    """Parse weekday + day (e.g., 'lunes 29')."""
+    if day < 1 or day > 31:
+        return None
+
+    # Map Spanish weekdays to numbers (Monday=0)
+    weekdays = {
+        'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3,
+        'viernes': 4, 'sabado': 5, 'domingo': 6
+    }
+
+    target_weekday = weekdays.get(weekday.lower())
+    if target_weekday is None:
+        return None
+
+    # Try current month first
+    try:
+        target_date = now.replace(day=day, hour=9, minute=0, second=0, microsecond=0)
+        # Check if it's the right weekday
+        if target_date.weekday() == target_weekday:
+            # If it's in the past, try next month
+            if target_date <= now:
+                if now.month == 12:
+                    target_date = target_date.replace(year=now.year + 1, month=1)
+                else:
+                    target_date = target_date.replace(month=now.month + 1)
+            return target_date
+    except ValueError:
+        pass
+
+    # Try next month
+    try:
+        if now.month == 12:
+            target_date = now.replace(year=now.year + 1, month=1, day=day, hour=9, minute=0, second=0, microsecond=0)
+        else:
+            target_date = now.replace(month=now.month + 1, day=day, hour=9, minute=0, second=0, microsecond=0)
+
+        if target_date.weekday() == target_weekday:
+            return target_date
+    except ValueError:
+        pass
+
+    return None
+
+def _smart_next_weekday_parse(weekday: str, now: datetime) -> datetime:
+    """Parse 'weekday que viene' (e.g., 'lunes que viene')."""
+    # Map Spanish weekdays to numbers (Monday=0)
+    weekdays = {
+        'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3,
+        'viernes': 4, 'sabado': 5, 'domingo': 6
+    }
+
+    target_weekday = weekdays.get(weekday.lower())
+    if target_weekday is None:
+        return None
+
+    # Calculate days until next occurrence of this weekday
+    current_weekday = now.weekday()
+    days_ahead = target_weekday - current_weekday
+
+    # If it's the same weekday, go to next week
+    if days_ahead <= 0:
+        days_ahead += 7
+
+    target_date = now + timedelta(days=days_ahead)
+    target_date = target_date.replace(hour=9, minute=0, second=0, microsecond=0)
+
+    return target_date
+
 def _parse_reminder_ids(text: str) -> list:
     """Parse reminder IDs from various formats."""
     reminder_ids = []
@@ -652,10 +721,14 @@ def _parse_date_only(text: str) -> datetime:
 
     # Smart patterns for intuitive date parsing (reusing existing logic)
     smart_patterns = [
+        # "el lunes 29" or "lunes 29" (weekday + day) - HIGHER PRIORITY
+        (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(\d{1,2})\b', lambda m: _smart_weekday_day_parse(m.group(1), int(m.group(2)), now)),
+        # "el lunes que viene" or "lunes que viene" - HIGHER PRIORITY
+        (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+que\s+viene\b', lambda m: _smart_next_weekday_parse(m.group(1), now)),
         # "el 20" (day of current month/year)
         (r'\b(?:el\s+)?(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
         # "el 20/12" or "20/12" (day/month of current year)
-        (r'\b(?:el\s+)?(\d{1,2})[\/-](\d{1,2})\b(?![\-:])', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now)),
+        (r'\b(?:el\s+)?(\d{1,2})[\/-](\d{1,2})\b(?![\-:])', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now))
     ]
 
     for pattern, calc_func in smart_patterns:
@@ -705,6 +778,10 @@ def extract_date_and_text(text: str):
 
     # Smart patterns for intuitive date parsing
     smart_patterns = [
+        # "el lunes 29" or "lunes 29" (weekday + day) - HIGHER PRIORITY
+        (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(\d{1,2})\b', lambda m: _smart_weekday_day_parse(m.group(1), int(m.group(2)), now)),
+        # "el lunes que viene" or "lunes que viene" - HIGHER PRIORITY
+        (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+que\s+viene\b', lambda m: _smart_next_weekday_parse(m.group(1), now)),
         # "el 20" (day of current month/year)
         (r'\bel\s+(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
         # "el 20/12" or "20/12" (day/month of current year)
@@ -719,6 +796,27 @@ def extract_date_and_text(text: str):
             datetime_obj = calc_func(match)
             if datetime_obj:
                 clean_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+
+                # After finding a date, check if there's time info in remaining text
+                time_match = re.search(r'\ba\s*las?\s+(\d{1,2})(?::(\d{2}))?\b', clean_text, re.IGNORECASE)
+                if time_match:
+                    hour = int(time_match.group(1))
+                    minute = int(time_match.group(2)) if time_match.group(2) else 0
+
+                    # Apply smart hour parsing if needed
+                    if hour <= 12:
+                        # Use the same smart hour logic
+                        time_obj = _smart_hour_parse(hour, minute, datetime_obj)
+                        if time_obj:
+                            # Replace the date part but keep the time from smart parsing
+                            datetime_obj = datetime_obj.replace(hour=time_obj.hour, minute=time_obj.minute)
+                    else:
+                        # Hour is already in 24h format
+                        datetime_obj = datetime_obj.replace(hour=hour, minute=minute)
+
+                    # Remove time pattern from clean text
+                    clean_text = re.sub(r'\ba\s*las?\s+\d{1,2}(?::\d{2})?\b', '', clean_text, flags=re.IGNORECASE).strip()
+
                 return datetime_obj, clean_text
 
     # Relative time patterns
