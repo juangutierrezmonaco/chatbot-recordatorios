@@ -151,6 +151,109 @@ async def process_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         f"✅ Dale, te aviso el {formatted_date}: \"{reminder_text}\" (ID #{reminder_id})"
     )
 
+def _smart_day_parse(day: int, now: datetime) -> datetime:
+    """Parse a day of the month intelligently (e.g., 'el 20')."""
+    if day < 1 or day > 31:
+        return None
+
+    # Try current month first
+    try:
+        target_date = now.replace(day=day, hour=9, minute=0, second=0, microsecond=0)
+        # If the date is in the past, try next month
+        if target_date <= now:
+            if now.month == 12:
+                target_date = target_date.replace(year=now.year + 1, month=1)
+            else:
+                target_date = target_date.replace(month=now.month + 1)
+        return target_date
+    except ValueError:
+        # Day doesn't exist in current month, try next month
+        try:
+            if now.month == 12:
+                target_date = now.replace(year=now.year + 1, month=1, day=day, hour=9, minute=0, second=0, microsecond=0)
+            else:
+                target_date = now.replace(month=now.month + 1, day=day, hour=9, minute=0, second=0, microsecond=0)
+            return target_date
+        except ValueError:
+            return None
+
+def _smart_date_parse(day: int, month: int, now: datetime) -> datetime:
+    """Parse day/month intelligently (e.g., '20/12')."""
+    if day < 1 or day > 31 or month < 1 or month > 12:
+        return None
+
+    # Try current year first
+    try:
+        target_date = now.replace(year=now.year, month=month, day=day, hour=9, minute=0, second=0, microsecond=0)
+        # If the date is in the past, use next year
+        if target_date <= now:
+            target_date = target_date.replace(year=now.year + 1)
+        return target_date
+    except ValueError:
+        return None
+
+def _smart_hour_parse(hour: int, minute: int, now: datetime) -> datetime:
+    """Parse hour intelligently (e.g., 'a las 9')."""
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return None
+
+    # If hour is already in 24h format (13-23), use as is
+    if hour >= 13:
+        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target_time <= now:
+            target_time += timedelta(days=1)
+        return target_time
+
+    # For hours 1-12, we need to infer AM/PM
+    # Create both AM and PM options
+    am_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    pm_time = now.replace(hour=hour + 12, minute=minute, second=0, microsecond=0)
+
+    # Smart inference logic:
+    # 1. If it's before 6 AM, prefer AM times
+    if now.hour < 6:
+        if am_time > now:
+            return am_time
+        elif pm_time > now:
+            return pm_time
+        else:
+            return am_time + timedelta(days=1)
+
+    # 2. If it's morning (6 AM - 11:59 AM), prefer the next available time
+    elif 6 <= now.hour < 12:
+        if am_time > now:
+            return am_time
+        elif pm_time > now:
+            return pm_time
+        else:
+            return am_time + timedelta(days=1)
+
+    # 3. If it's afternoon/evening (12 PM onwards), prefer PM for reasonable hours
+    else:
+        # For typical evening hours (6-11), strongly prefer PM if it's future
+        if 6 <= hour <= 11 and pm_time > now:
+            return pm_time
+        # For early hours (1-5), could be either but prefer the next available
+        elif 1 <= hour <= 5:
+            if pm_time > now:
+                return pm_time
+            else:
+                return am_time + timedelta(days=1)
+        # For hours like 12, prefer PM if available
+        elif hour == 12:
+            if pm_time > now:
+                return pm_time
+            else:
+                return am_time + timedelta(days=1)
+        # For other cases, use next available
+        else:
+            if am_time > now:
+                return am_time
+            elif pm_time > now:
+                return pm_time
+            else:
+                return am_time + timedelta(days=1)
+
 def extract_date_and_text(text: str):
     """Extract date/time and reminder text."""
 
@@ -171,11 +274,32 @@ def extract_date_and_text(text: str):
 
     text = re.sub(r'\s+', ' ', text).strip()
 
+    # Get current time for smart inference
+    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+
+    # Smart patterns for intuitive date parsing
+    smart_patterns = [
+        # "el 20" (day of current month/year)
+        (r'\bel\s+(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
+        # "el 20/12" or "20/12" (day/month of current year)
+        (r'\b(?:el\s+)?(\d{1,2})[\/\-](\d{1,2})\b(?![\-:])', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now)),
+        # "a las 9" (smart hour inference)
+        (r'\ba\s*las?\s+(\d{1,2})(?::(\d{2}))?\b', lambda m: _smart_hour_parse(int(m.group(1)), int(m.group(2)) if m.group(2) else 0, now))
+    ]
+
+    for pattern, calc_func in smart_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            datetime_obj = calc_func(match)
+            if datetime_obj:
+                clean_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+                return datetime_obj, clean_text
+
     # Relative time patterns
     relative_patterns = [
-        (r'en\s+(\d+)\s*m(?:in)?(?:utos?)?', lambda m: datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(minutes=int(m.group(1)))),
-        (r'en\s+(\d+)\s*h(?:oras?)?', lambda m: datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(hours=int(m.group(1)))),
-        (r'en\s+(\d+)\s*d(?:ias?)?', lambda m: datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(days=int(m.group(1))))
+        (r'en\s+(\d+)\s*m(?:in)?(?:utos?)?', lambda m: now + timedelta(minutes=int(m.group(1)))),
+        (r'en\s+(\d+)\s*h(?:oras?)?', lambda m: now + timedelta(hours=int(m.group(1)))),
+        (r'en\s+(\d+)\s*d(?:ias?)?', lambda m: now + timedelta(days=int(m.group(1))))
     ]
 
     for pattern, calc_func in relative_patterns:
@@ -190,18 +314,16 @@ def extract_date_and_text(text: str):
     date_patterns_no_time = [
         r'\b(?:mañana|tomorrow)\b',
         r'\b(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b',
-        r'\b(?:hoy|today)\b',
-        r'\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b'
+        r'\b(?:hoy|today)\b'
     ]
 
-    # Search for specific date/time patterns
+    # Search for specific date/time patterns (excluding those handled by smart patterns)
     date_patterns = [
         r'\b(?:mañana|tomorrow)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?|\d{1,2}\s*de\s*la\s*(?:mañana|tarde|noche)|antes\s*de\s*las?\s*\d{1,2})',
         r'\b(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)',
-        r'\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)?',
+        r'\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)?',  # Full dates with year
         r'\b\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}\b',
         r'\b(?:hoy|today)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)',
-        r'\ba\s*las?\s*\d{1,2}(?::\d{2})?\b',
         r'\bantes\s*de\s*las?\s*\d{1,2}(?::\d{2})?\b',
         r'\b\d{1,2}:\d{2}\b'
     ]
