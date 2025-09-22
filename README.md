@@ -30,7 +30,7 @@ export TELEGRAM_TOKEN='tu_token_del_botfather'
 
 4. **Ejecutar el bot:**
 ```bash
-python bot.py
+python3 bot.py
 ```
 
 ## 📋 Funcionalidades
