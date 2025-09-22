@@ -68,6 +68,40 @@ def get_active_reminders(chat_id: int) -> List[Dict]:
 
     return reminders
 
+def get_today_reminders(chat_id: int) -> List[Dict]:
+    """Get all active reminders for today for a chat."""
+    import pytz
+
+    # Get today's date range in Buenos Aires timezone
+    timezone = pytz.timezone('America/Argentina/Buenos_Aires')
+    now = datetime.now(timezone)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, datetime
+        FROM reminders
+        WHERE chat_id = ? AND status = 'active'
+        AND datetime >= ? AND datetime <= ?
+        ORDER BY datetime
+    ''', (chat_id, today_start.isoformat(), today_end.isoformat()))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': datetime.fromisoformat(row[2])
+        })
+
+    return reminders
+
 def get_all_active_reminders() -> List[Dict]:
     """Get all active reminders from all chats."""
     conn = sqlite3.connect(DB_PATH)

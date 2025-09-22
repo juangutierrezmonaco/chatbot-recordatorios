@@ -28,6 +28,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 **Comandos:**
 /recordar <fecha/hora> <texto> - Crear recordatorio
 /lista - Ver recordatorios activos
+/hoy - Ver recordatorios de hoy
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
@@ -72,6 +73,25 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for reminder in reminders:
         formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
         message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
+        message += f"   {reminder['text']}\n\n"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /hoy command."""
+    chat_id = update.effective_chat.id
+    reminders = db.get_today_reminders(chat_id)
+
+    if not reminders:
+        await update.message.reply_text("📅 No tienes recordatorios para hoy.")
+        return
+
+    message = "📅 **Tus recordatorios para hoy:**\n\n"
+
+    for reminder in reminders:
+        # Show only time for today's reminders (not date)
+        formatted_time = reminder['datetime'].strftime("%H:%M")
+        message += f"🔔 **#{reminder['id']}** - {formatted_time}\n"
         message += f"   {reminder['text']}\n\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')
