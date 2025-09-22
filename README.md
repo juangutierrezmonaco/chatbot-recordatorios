@@ -15,18 +15,28 @@ cd chatbot-recordatorios
 pip install -r requirements.txt
 ```
 
-3. **Configurar el token de Telegram:**
+3. **Configurar variables de entorno:**
 
-Opción A - Usar archivo .env (recomendado):
-```bash
-# El archivo .env ya está creado con el token configurado
-# Solo asegúrate de que esté presente en el directorio raíz
+Crear un archivo `.env` en la raíz del proyecto:
+```
+TELEGRAM_TOKEN=tu_token_aqui
+OPENAI_API_KEY=tu_openai_api_key_aqui
 ```
 
-Opción B - Variable de entorno:
-```bash
-export TELEGRAM_TOKEN='tu_token_del_botfather'
-```
+**Variables requeridas:**
+- `TELEGRAM_TOKEN`: Token de tu bot de Telegram (obligatorio)
+- `OPENAI_API_KEY`: API key de OpenAI para transcripción de voz (opcional)
+
+**Para obtener el token de Telegram:**
+1. Habla con [@BotFather](https://t.me/botfather) en Telegram
+2. Usa `/newbot` y sigue las instrucciones
+3. Copia el token que te da
+
+**Para obtener la API key de OpenAI (para mensajes de voz):**
+1. Ve a [platform.openai.com](https://platform.openai.com/)
+2. Crea una cuenta y ve a API Keys
+3. Genera una nueva API key
+4. **Nota:** Los mensajes de voz requieren créditos en tu cuenta de OpenAI
 
 4. **Ejecutar el bot:**
 ```bash
@@ -39,8 +49,16 @@ python3 bot.py
 
 - `/start` - Mensaje de bienvenida con instrucciones
 - `/recordar <fecha/hora> <texto>` - Crear recordatorio
-- `/lista` - Ver todos los recordatorios activos
-- `/cancelar <id>` - Cancelar un recordatorio por ID
+- `/lista` - Ver recordatorios activos
+- `/hoy` - Ver recordatorios de hoy
+- `/dia <fecha>` - Ver recordatorios de fecha específica
+- `/buscar <palabra>` - Buscar recordatorios
+- `/historial` - Ver recordatorios pasados
+- `/baul <texto>` - Guardar nota en el baúl
+- `/lista_baul` - Ver todas las notas del baúl
+- `/buscar_baul <palabra>` - Buscar en el baúl
+- `/borrar_baul <id>` - Eliminar nota del baúl
+- `/cancelar <id>` - Cancelar recordatorio(s)
 
 ### Ejemplos de comandos:
 
@@ -58,8 +76,21 @@ El bot también entiende frases libres en español:
 Mañana a las 2 recordame que tengo turno médico
 En 45 minutos recordame sacar la pizza
 El viernes a las 18hs haceme acordar de comprar cerveza
-El 20/09 a las 9:30 recordame la reunión
+El lunes 29 a las 15 recordame pedir el pedal
 ```
+
+### Mensajes de voz: 🎙️
+
+¡Envía mensajes de voz y el bot los transcribirá automáticamente!
+
+**Ejemplos de mensajes de voz:**
+- "Recordame mañana a las 9 comprar leche"
+- "Nota que no me gustó el restaurante La Parolaccia"
+- "El viernes recordame llamar al dentista"
+
+**Configuración requerida:**
+- Necesitas configurar `OPENAI_API_KEY` en tu archivo `.env`
+- Requiere créditos en tu cuenta de OpenAI para funcionar
 
 ## 🛠️ Estructura del proyecto
 

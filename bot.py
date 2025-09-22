@@ -58,6 +58,12 @@ def main():
         application.add_handler(CommandHandler("borrar_baul", handlers.vault_delete_command))
         application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
 
+        # Handler for voice messages
+        application.add_handler(MessageHandler(
+            filters.VOICE,
+            handlers.voice_message_handler
+        ))
+
         # Handler for free messages (natural language)
         application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,

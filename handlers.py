@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 import db
 import scheduler
+from transcription import transcriber
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,11 @@ También puedes escribir directamente:
 • "Mañana a las 2 recordame que tengo turno médico"
 • "En 45 minutos recordame sacar la pizza"
 • "El viernes a las 18hs haceme acordar de comprar cerveza"
+
+**Mensajes de voz:** 🎙️
+¡Envía mensajes de voz y los transcribiré automáticamente!
+• "Recordame mañana comprar leche"
+• "Nota que no me gustó el restaurante X"
 
 ¡Empezá a crear tus recordatorios! 🎯
     """
@@ -921,6 +927,67 @@ def extract_date_and_text(text: str):
         remaining_text = "recordatorio"
 
     return parsed_date, remaining_text
+
+async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle voice messages and transcribe them."""
+    if not update.message.voice:
+        return
+
+    # Show typing indicator while processing
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+
+    try:
+        # Get the voice file
+        voice_file = await context.bot.get_file(update.message.voice.file_id)
+
+        # Transcribe the voice message
+        transcribed_text = await transcriber.download_and_transcribe(voice_file, context.bot)
+
+        if not transcribed_text:
+            await update.message.reply_text(
+                "❌ No pude transcribir el mensaje de voz. Asegurate de que tengas configurada la API de OpenAI."
+            )
+            return
+
+        # Show what was transcribed
+        await update.message.reply_text(f"🎙️ **Transcribí:** \"{transcribed_text}\"", parse_mode='Markdown')
+
+        # Process the transcribed text as a normal message
+        # Check if it's a reminder or vault entry
+        text_lower = transcribed_text.lower()
+
+        # Check if it's a vault entry (keywords that suggest it's a note)
+        vault_keywords = ['recordar que', 'acordarme que', 'nota que', 'apuntar que', 'guardar que']
+        if any(keyword in text_lower for keyword in vault_keywords):
+            # Remove vault keywords and save to vault
+            clean_text = transcribed_text
+            for keyword in vault_keywords:
+                clean_text = re.sub(rf'\b{keyword}\b', '', clean_text, flags=re.IGNORECASE)
+            clean_text = clean_text.strip()
+
+            if clean_text:
+                chat_id = update.effective_chat.id
+                vault_id = db.add_vault_entry(chat_id, clean_text)
+                await update.message.reply_text(f"🗄️ Guardado en el baúl (#{vault_id}): \"{clean_text}\"")
+            return
+
+        # Check if it's a reminder attempt
+        reminder_keywords = ['recordar', 'recordame', 'aviso', 'avisame', 'haceme acordar', 'acordar']
+        if any(keyword in text_lower for keyword in reminder_keywords):
+            await process_reminder(update, context, transcribed_text)
+        else:
+            # If it doesn't match any pattern, suggest what they can do
+            await update.message.reply_text(
+                "🤔 No estoy seguro si es un recordatorio o una nota. Puedes:\n"
+                "• Para recordatorios: incluye fecha/hora (ej: 'recordame mañana...')\n"
+                "• Para notas del baúl: di 'recordar que...' o 'nota que...'"
+            )
+
+    except Exception as e:
+        logger.error(f"Error processing voice message: {e}")
+        await update.message.reply_text(
+            "❌ Ocurrió un error procesando el mensaje de voz. Intenta nuevamente."
+        )
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """Handle bot errors."""
