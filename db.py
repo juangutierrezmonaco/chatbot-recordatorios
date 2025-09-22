@@ -131,6 +131,43 @@ def search_reminders(chat_id: int, keyword: str) -> List[Dict]:
 
     return reminders
 
+def get_historical_reminders(chat_id: int, status_filter: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    """Get historical reminders (sent/cancelled) for a chat."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if status_filter and status_filter in ['sent', 'cancelled']:
+        cursor.execute('''
+            SELECT id, text, datetime, status
+            FROM reminders
+            WHERE chat_id = ? AND status = ?
+            ORDER BY datetime DESC
+            LIMIT ?
+        ''', (chat_id, status_filter, limit))
+    else:
+        # Get both sent and cancelled
+        cursor.execute('''
+            SELECT id, text, datetime, status
+            FROM reminders
+            WHERE chat_id = ? AND status IN ('sent', 'cancelled')
+            ORDER BY datetime DESC
+            LIMIT ?
+        ''', (chat_id, limit))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': datetime.fromisoformat(row[2]),
+            'status': row[3]
+        })
+
+    return reminders
+
 def get_all_active_reminders() -> List[Dict]:
     """Get all active reminders from all chats."""
     conn = sqlite3.connect(DB_PATH)

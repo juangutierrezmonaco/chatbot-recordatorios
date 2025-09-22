@@ -30,6 +30,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /lista - Ver recordatorios activos
 /hoy - Ver recordatorios de hoy
 /buscar <palabra> - Buscar recordatorios
+/historial - Ver recordatorios pasados
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
@@ -136,6 +137,70 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
         message += f"   {highlighted_text}\n\n"
 
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /historial command."""
+    chat_id = update.effective_chat.id
+
+    # Parse filter argument
+    status_filter = None
+    if context.args:
+        filter_arg = context.args[0].lower()
+        if filter_arg in ['enviados', 'sent']:
+            status_filter = 'sent'
+        elif filter_arg in ['cancelados', 'cancelled']:
+            status_filter = 'cancelled'
+        elif filter_arg not in ['todos', 'all']:
+            await update.message.reply_text(
+                "❌ Filtro inválido. Usa:\n"
+                "• /historial\n"
+                "• /historial enviados\n"
+                "• /historial cancelados"
+            )
+            return
+
+    reminders = db.get_historical_reminders(chat_id, status_filter)
+
+    if not reminders:
+        if status_filter == 'sent':
+            message = "📜 No tienes recordatorios enviados."
+        elif status_filter == 'cancelled':
+            message = "📜 No tienes recordatorios cancelados."
+        else:
+            message = "📜 No tienes historial de recordatorios."
+
+        await update.message.reply_text(message)
+        return
+
+    # Build header message
+    if status_filter == 'sent':
+        header = "📜 **Recordatorios enviados:**"
+    elif status_filter == 'cancelled':
+        header = "📜 **Recordatorios cancelados:**"
+    else:
+        header = "📜 **Historial de recordatorios:**"
+
+    message = f"{header}\n\n"
+
+    for reminder in reminders:
+        formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
+
+        # Status emoji and text
+        if reminder['status'] == 'sent':
+            status_emoji = "✅"
+            status_text = "Enviado"
+        elif reminder['status'] == 'cancelled':
+            status_emoji = "❌"
+            status_text = "Cancelado"
+        else:
+            status_emoji = "❓"
+            status_text = reminder['status']
+
+        message += f"{status_emoji} **#{reminder['id']}** - {formatted_date} ({status_text})\n"
+        message += f"   {reminder['text']}\n\n"
+
+    message += f"_(Mostrando últimos {len(reminders)} recordatorios)_"
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
