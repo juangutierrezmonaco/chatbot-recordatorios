@@ -131,6 +131,43 @@ def search_reminders(chat_id: int, keyword: str) -> List[Dict]:
 
     return reminders
 
+def get_date_reminders(chat_id: int, target_date: datetime) -> List[Dict]:
+    """Get all active reminders for a specific date."""
+    import pytz
+
+    # Ensure target_date has timezone info
+    if target_date.tzinfo is None:
+        timezone = pytz.timezone('America/Argentina/Buenos_Aires')
+        target_date = timezone.localize(target_date)
+
+    # Get date range for the target day
+    day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, datetime
+        FROM reminders
+        WHERE chat_id = ? AND status = 'active'
+        AND datetime >= ? AND datetime <= ?
+        ORDER BY datetime
+    ''', (chat_id, day_start.isoformat(), day_end.isoformat()))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': datetime.fromisoformat(row[2])
+        })
+
+    return reminders
+
 def get_historical_reminders(chat_id: int, status_filter: Optional[str] = None, limit: int = 20) -> List[Dict]:
     """Get historical reminders (sent/cancelled) for a chat."""
     conn = sqlite3.connect(DB_PATH)

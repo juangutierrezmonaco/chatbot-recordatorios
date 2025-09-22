@@ -29,6 +29,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /recordar <fecha/hora> <texto> - Crear recordatorio
 /lista - Ver recordatorios activos
 /hoy - Ver recordatorios de hoy
+/dia <fecha> - Ver recordatorios de fecha específica
 /buscar <palabra> - Buscar recordatorios
 /historial - Ver recordatorios pasados
 /cancelar <id> - Cancelar recordatorio
@@ -136,6 +137,63 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
         message += f"   {highlighted_text}\n\n"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /dia command."""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /dia <fecha>\n"
+            "Ejemplos:\n"
+            "• /dia mañana\n"
+            "• /dia 25/12\n"
+            "• /dia el lunes\n"
+            "• /dia 25-12-2025"
+        )
+        return
+
+    chat_id = update.effective_chat.id
+    date_text = ' '.join(context.args)
+
+    # Parse the date
+    target_date = _parse_date_only(date_text)
+
+    if not target_date:
+        await update.message.reply_text(
+            "❌ No pude entender la fecha. Ejemplos:\n"
+            "• mañana\n"
+            "• 25/12\n"
+            "• el viernes\n"
+            "• 25-12-2025"
+        )
+        return
+
+    # Get reminders for that date
+    reminders = db.get_date_reminders(chat_id, target_date)
+
+    # Format date for display
+    formatted_date = target_date.strftime("%d/%m/%Y")
+    weekday = target_date.strftime("%A")
+
+    # Translate weekday to Spanish
+    weekday_spanish = {
+        'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+        'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+    }
+    weekday = weekday_spanish.get(weekday, weekday)
+
+    if not reminders:
+        await update.message.reply_text(f"📅 No tienes recordatorios para el {weekday} {formatted_date}.")
+        return
+
+    message = f"📅 **Recordatorios para {weekday} {formatted_date}:**\n\n"
+
+    for reminder in reminders:
+        # Show only time for same-day reminders
+        formatted_time = reminder['datetime'].strftime("%H:%M")
+        message += f"🔔 **#{reminder['id']}** - {formatted_time}\n"
+        message += f"   {reminder['text']}\n\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -476,6 +534,46 @@ def _highlight_keyword(text: str, keyword: str) -> str:
         return text
 
     return pattern.sub(replace_func, text)
+
+def _parse_date_only(text: str) -> datetime:
+    """Parse a date string without extracting reminder text."""
+    import pytz
+
+    # Clean text
+    text = text.strip()
+
+    # Get current time for smart inference
+    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+
+    # Smart patterns for intuitive date parsing (reusing existing logic)
+    smart_patterns = [
+        # "el 20" (day of current month/year)
+        (r'\b(?:el\s+)?(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
+        # "el 20/12" or "20/12" (day/month of current year)
+        (r'\b(?:el\s+)?(\d{1,2})[\/-](\d{1,2})\b(?![\-:])', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now)),
+    ]
+
+    for pattern, calc_func in smart_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            datetime_obj = calc_func(match)
+            if datetime_obj:
+                return datetime_obj
+
+    # Try with dateparser for natural language dates
+    parsed_date = dateparser.parse(text, settings=DATEPARSER_SETTINGS)
+
+    if parsed_date:
+        # If parsed but has no specific time, set to start of day
+        parsed_date = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Ensure the date has timezone
+        if parsed_date.tzinfo is None:
+            parsed_date = pytz.timezone('America/Argentina/Buenos_Aires').localize(parsed_date)
+
+        return parsed_date
+
+    return None
 
 def extract_date_and_text(text: str):
     """Extract date/time and reminder text."""
