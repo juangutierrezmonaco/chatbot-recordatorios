@@ -10,7 +10,7 @@ import scheduler
 
 logger = logging.getLogger(__name__)
 
-# Configurar dateparser para español
+# Configure dateparser for Spanish
 DATEPARSER_SETTINGS = {
     'PREFER_DATES_FROM': 'future',
     'TIMEZONE': 'America/Argentina/Buenos_Aires',
@@ -19,8 +19,8 @@ DATEPARSER_SETTINGS = {
 }
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /start."""
-    mensaje = """
+    """Handle the /start command."""
+    message = """
 🤖 ¡Hola! Soy tu bot de recordatorios personal.
 
 📝 **Cómo usarme:**
@@ -44,10 +44,10 @@ También puedes escribir directamente:
 ¡Empezá a crear tus recordatorios! 🎯
     """
 
-    await update.message.reply_text(mensaje)
+    await update.message.reply_text(message)
 
-async def recordar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /recordar."""
+async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /recordar command."""
     if not context.args:
         await update.message.reply_text(
             "❌ Uso: /recordar <fecha/hora> <texto>\n"
@@ -55,29 +55,29 @@ async def recordar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    texto_completo = ' '.join(context.args)
-    resultado = await procesar_recordatorio(update, context, texto_completo)
+    full_text = ' '.join(context.args)
+    result = await process_reminder(update, context, full_text)
 
-async def lista_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /lista."""
+async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /lista command."""
     chat_id = update.effective_chat.id
-    recordatorios = db.obtener_recordatorios_activos(chat_id)
+    reminders = db.get_active_reminders(chat_id)
 
-    if not recordatorios:
+    if not reminders:
         await update.message.reply_text("📝 No tienes recordatorios activos.")
         return
 
-    mensaje = "📋 **Tus recordatorios activos:**\n\n"
+    message = "📋 **Tus recordatorios activos:**\n\n"
 
-    for recordatorio in recordatorios:
-        fecha_formateada = recordatorio['fecha_hora'].strftime("%d/%m/%Y %H:%M")
-        mensaje += f"🔔 **#{recordatorio['id']}** - {fecha_formateada}\n"
-        mensaje += f"   {recordatorio['texto']}\n\n"
+    for reminder in reminders:
+        formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
+        message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
+        message += f"   {reminder['text']}\n\n"
 
-    await update.message.reply_text(mensaje, parse_mode='Markdown')
+    await update.message.reply_text(message, parse_mode='Markdown')
 
-async def cancelar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /cancelar."""
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /cancelar command."""
     if not context.args:
         await update.message.reply_text(
             "❌ Uso: /cancelar <id>\n"
@@ -86,41 +86,41 @@ async def cancelar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        recordatorio_id = int(context.args[0])
+        reminder_id = int(context.args[0])
     except ValueError:
         await update.message.reply_text("❌ El ID debe ser un número.")
         return
 
     chat_id = update.effective_chat.id
 
-    if db.cancelar_recordatorio(chat_id, recordatorio_id):
-        scheduler.cancelar_job_recordatorio(recordatorio_id)
-        await update.message.reply_text(f"❌ Recordatorio #{recordatorio_id} cancelado")
+    if db.cancel_reminder(chat_id, reminder_id):
+        scheduler.cancel_reminder_job(reminder_id)
+        await update.message.reply_text(f"❌ Recordatorio #{reminder_id} cancelado")
     else:
-        await update.message.reply_text(f"❌ No se encontró el recordatorio #{recordatorio_id}")
+        await update.message.reply_text(f"❌ No se encontró el recordatorio #{reminder_id}")
 
-async def mensaje_libre(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja mensajes en lenguaje natural."""
-    texto = update.message.text.lower()
+async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle natural language messages."""
+    text = update.message.text.lower()
 
-    # Verificar si es un intento de recordatorio
-    palabras_clave = ['recordar', 'recordame', 'aviso', 'avisame', 'haceme acordar', 'acordar']
+    # Check if it's a reminder attempt
+    keywords = ['recordar', 'recordame', 'aviso', 'avisame', 'haceme acordar', 'acordar']
 
-    if any(palabra in texto for palabra in palabras_clave):
-        await procesar_recordatorio(update, context, update.message.text)
+    if any(keyword in text for keyword in keywords):
+        await process_reminder(update, context, update.message.text)
     else:
         await update.message.reply_text(
             "🤔 No entiendo. Usa /start para ver cómo crear recordatorios."
         )
 
-async def procesar_recordatorio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto: str):
-    """Procesa un recordatorio desde comando o lenguaje natural."""
+async def process_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Process a reminder from command or natural language."""
     chat_id = update.effective_chat.id
 
-    # Extraer fecha/hora y texto
-    fecha_hora, texto_recordatorio = extraer_fecha_y_texto(texto)
+    # Extract date/time and text
+    datetime_obj, reminder_text = extract_date_and_text(text)
 
-    if not fecha_hora:
+    if not datetime_obj:
         await update.message.reply_text(
             "❌ No pude entender la fecha/hora. Ejemplos:\n"
             "• mañana 18:00\n"
@@ -129,73 +129,73 @@ async def procesar_recordatorio(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    if not texto_recordatorio:
+    if not reminder_text:
         await update.message.reply_text("❌ Falta el texto del recordatorio.")
         return
 
-    # Verificar que la fecha sea futura
-    ahora = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
-    if fecha_hora <= ahora:
+    # Verify that the date is in the future
+    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+    if datetime_obj <= now:
         await update.message.reply_text("❌ La fecha debe ser en el futuro.")
         return
 
-    # Guardar en BD y programar
-    recordatorio_id = db.agregar_recordatorio(chat_id, texto_recordatorio, fecha_hora)
-    scheduler.programar_recordatorio(
-        context.bot, chat_id, recordatorio_id, texto_recordatorio, fecha_hora
+    # Save to DB and schedule
+    reminder_id = db.add_reminder(chat_id, reminder_text, datetime_obj)
+    scheduler.schedule_reminder(
+        context.bot, chat_id, reminder_id, reminder_text, datetime_obj
     )
 
-    # Confirmar al usuario
-    fecha_formateada = fecha_hora.strftime("%d/%m/%Y %H:%M")
+    # Confirm to user
+    formatted_date = datetime_obj.strftime("%d/%m/%Y %H:%M")
     await update.message.reply_text(
-        f"✅ Dale, te aviso el {fecha_formateada}: \"{texto_recordatorio}\" (ID #{recordatorio_id})"
+        f"✅ Dale, te aviso el {formatted_date}: \"{reminder_text}\" (ID #{reminder_id})"
     )
 
-def extraer_fecha_y_texto(texto: str):
-    """Extrae fecha/hora y texto del recordatorio."""
+def extract_date_and_text(text: str):
+    """Extract date/time and reminder text."""
 
-    # Limpiar texto
-    texto = texto.strip()
+    # Clean text
+    text = text.strip()
 
-    # Remover palabras de comando si existen
-    texto = re.sub(r'^\/(recordar|recordar)\s*', '', texto, flags=re.IGNORECASE)
+    # Remove command words if they exist
+    text = re.sub(r'^\/(?:recordar)\s*', '', text, flags=re.IGNORECASE)
 
-    # Remover palabras de solicitud
-    palabras_solicitud = [
+    # Remove request words
+    request_words = [
         'recordame', 'recordar', 'avisame', 'aviso', 'haceme acordar',
         'acordar', 'que', 'de que', 'de'
     ]
 
-    for palabra in palabras_solicitud:
-        texto = re.sub(rf'\b{palabra}\b', '', texto, flags=re.IGNORECASE)
+    for word in request_words:
+        text = re.sub(rf'\b{word}\b', '', text, flags=re.IGNORECASE)
 
-    texto = re.sub(r'\s+', ' ', texto).strip()
+    text = re.sub(r'\s+', ' ', text).strip()
 
-    # Patrones de tiempo relativo
-    patrones_relativos = [
+    # Relative time patterns
+    relative_patterns = [
         (r'en\s+(\d+)\s*m(?:in)?(?:utos?)?', lambda m: datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(minutes=int(m.group(1)))),
         (r'en\s+(\d+)\s*h(?:oras?)?', lambda m: datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(hours=int(m.group(1)))),
         (r'en\s+(\d+)\s*d(?:ias?)?', lambda m: datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(days=int(m.group(1))))
     ]
 
-    for patron, calc_func in patrones_relativos:
-        match = re.search(patron, texto, re.IGNORECASE)
+    for pattern, calc_func in relative_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            fecha_hora = calc_func(match)
-            texto_limpio = re.sub(patron, '', texto, flags=re.IGNORECASE).strip()
-            return fecha_hora, texto_limpio
+            datetime_obj = calc_func(match)
+            clean_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+            return datetime_obj, clean_text
 
-    # Intentar con dateparser
-    # Primero intentar patrones simples de fecha sin hora específica
-    patrones_fecha_sin_hora = [
+    # Try with dateparser
+    # First try simple date patterns without specific time
+    date_patterns_no_time = [
         r'\b(?:mañana|tomorrow)\b',
         r'\b(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b',
         r'\b(?:hoy|today)\b',
         r'\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b'
     ]
 
-    # Buscar patrones de fecha/hora específicos
-    patrones_fecha = [
+    # Search for specific date/time patterns
+    date_patterns = [
         r'\b(?:mañana|tomorrow)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?|\d{1,2}\s*de\s*la\s*(?:mañana|tarde|noche)|antes\s*de\s*las?\s*\d{1,2})',
         r'\b(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)',
         r'\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)?',
@@ -206,78 +206,78 @@ def extraer_fecha_y_texto(texto: str):
         r'\b\d{1,2}:\d{2}\b'
     ]
 
-    texto_fecha = None
-    texto_resto = texto
-    usar_hora_defecto = False
+    date_text = None
+    remaining_text = text
+    use_default_time = False
 
-    # Primero buscar patrones con hora específica
-    for patron in patrones_fecha:
-        match = re.search(patron, texto, re.IGNORECASE)
+    # First search for patterns with specific time
+    for pattern in date_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            texto_fecha = match.group(0)
-            # Procesar "antes de las X"
-            if "antes de las" in texto_fecha.lower():
-                # Extraer la hora del "antes de las X"
-                hora_match = re.search(r'(\d{1,2})(?::\d{2})?', texto_fecha)
-                if hora_match:
-                    hora = int(hora_match.group(1))
-                    # Si dice "antes de las 5 de la tarde", convertir a 17:00
-                    if "tarde" in texto.lower() and hora <= 12:
-                        hora += 12
-                    # Crear nueva fecha con hora específica
-                    base_fecha = re.search(r'\b(?:mañana|tomorrow|hoy|today)\b', texto_fecha, re.IGNORECASE)
-                    if base_fecha:
-                        if base_fecha.group(0).lower() in ['mañana', 'tomorrow']:
-                            fecha_base = (datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(days=1)).strftime('%Y-%m-%d')
+            date_text = match.group(0)
+            # Process "antes de las X"
+            if "antes de las" in date_text.lower():
+                # Extract the hour from "antes de las X"
+                hour_match = re.search(r'(\d{1,2})(?::\d{2})?', date_text)
+                if hour_match:
+                    hour = int(hour_match.group(1))
+                    # If it says "antes de las 5 de la tarde", convert to 17:00
+                    if "tarde" in text.lower() and hour <= 12:
+                        hour += 12
+                    # Create new date with specific time
+                    base_date = re.search(r'\b(?:mañana|tomorrow|hoy|today)\b', date_text, re.IGNORECASE)
+                    if base_date:
+                        if base_date.group(0).lower() in ['mañana', 'tomorrow']:
+                            date_base = (datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(days=1)).strftime('%Y-%m-%d')
                         else:
-                            fecha_base = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).strftime('%Y-%m-%d')
-                        texto_fecha = f"{fecha_base} {hora-1}:00"  # Una hora antes
-            texto_resto = texto.replace(match.group(0), '').strip()
+                            date_base = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).strftime('%Y-%m-%d')
+                        date_text = f"{date_base} {hour-1}:00"  # One hour before
+            remaining_text = text.replace(match.group(0), '').strip()
             break
 
-    # Si no se encontró patrón con hora, buscar solo fecha
-    if not texto_fecha:
-        for patron in patrones_fecha_sin_hora:
-            match = re.search(patron, texto, re.IGNORECASE)
+    # If no pattern with time was found, search for date only
+    if not date_text:
+        for pattern in date_patterns_no_time:
+            match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                texto_fecha = match.group(0)
-                texto_resto = texto.replace(texto_fecha, '').strip()
-                usar_hora_defecto = True
+                date_text = match.group(0)
+                remaining_text = text.replace(date_text, '').strip()
+                use_default_time = True
                 break
 
-    if not texto_fecha:
-        # Intentar parseando todo el texto
-        fecha_parseada = dateparser.parse(texto, settings=DATEPARSER_SETTINGS)
-        if fecha_parseada:
-            # Si parsea todo, asumir que no hay texto adicional
-            return fecha_parseada, "recordatorio"
+    if not date_text:
+        # Try parsing the entire text
+        parsed_date = dateparser.parse(text, settings=DATEPARSER_SETTINGS)
+        if parsed_date:
+            # If it parses everything, assume no additional text
+            return parsed_date, "recordatorio"
         return None, None
 
-    # Parsear la fecha encontrada
-    fecha_parseada = dateparser.parse(texto_fecha, settings=DATEPARSER_SETTINGS)
+    # Parse the found date
+    parsed_date = dateparser.parse(date_text, settings=DATEPARSER_SETTINGS)
 
-    # Si se parseó pero no tiene hora específica, agregar 9am por defecto
-    if fecha_parseada and usar_hora_defecto:
-        fecha_parseada = fecha_parseada.replace(hour=9, minute=0, second=0, microsecond=0)
+    # If parsed but has no specific time, add 9am by default
+    if parsed_date and use_default_time:
+        parsed_date = parsed_date.replace(hour=9, minute=0, second=0, microsecond=0)
 
-    if not fecha_parseada:
+    if not parsed_date:
         return None, None
 
-    # Asegurar que la fecha tenga timezone
-    if fecha_parseada.tzinfo is None:
-        fecha_parseada = pytz.timezone('America/Argentina/Buenos_Aires').localize(fecha_parseada)
+    # Ensure the date has timezone
+    if parsed_date.tzinfo is None:
+        parsed_date = pytz.timezone('America/Argentina/Buenos_Aires').localize(parsed_date)
 
-    # Limpiar texto restante
-    texto_resto = re.sub(r'^\s*que\s+', '', texto_resto, flags=re.IGNORECASE)
-    texto_resto = texto_resto.strip()
+    # Clean remaining text
+    remaining_text = re.sub(r'^\s*que\s+', '', remaining_text, flags=re.IGNORECASE)
+    remaining_text = remaining_text.strip()
 
-    if not texto_resto:
-        texto_resto = "recordatorio"
+    if not remaining_text:
+        remaining_text = "recordatorio"
 
-    return fecha_parseada, texto_resto
+    return parsed_date, remaining_text
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja errores del bot."""
+    """Handle bot errors."""
     logger.error(f"Error: {context.error}")
 
     if isinstance(update, Update) and update.effective_message:

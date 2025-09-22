@@ -11,71 +11,71 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=pytz.timezone('America/Argentina/Buenos_Aires'))
 
 def init_scheduler():
-    """Inicializa el scheduler."""
+    """Initialize the scheduler."""
     scheduler.start()
-    logger.info("Scheduler iniciado")
+    logger.info("Scheduler started")
 
-async def enviar_recordatorio(bot: Bot, chat_id: int, recordatorio_id: int, texto: str):
-    """Envía un recordatorio al usuario y marca como enviado en BD."""
+async def send_reminder(bot: Bot, chat_id: int, reminder_id: int, text: str):
+    """Send a reminder to the user and mark as sent in DB."""
     try:
-        mensaje = f"⏰ Recordatorio (#{recordatorio_id}): {texto}"
-        await bot.send_message(chat_id=chat_id, text=mensaje)
-        db.marcar_recordatorio_enviado(recordatorio_id)
-        logger.info(f"Recordatorio {recordatorio_id} enviado a chat {chat_id}")
+        message = f"⏰ Recordatorio (#{reminder_id}): {text}"
+        await bot.send_message(chat_id=chat_id, text=message)
+        db.mark_reminder_sent(reminder_id)
+        logger.info(f"Reminder {reminder_id} sent to chat {chat_id}")
     except Exception as e:
-        logger.error(f"Error enviando recordatorio {recordatorio_id}: {e}")
+        logger.error(f"Error sending reminder {reminder_id}: {e}")
 
-def programar_recordatorio(bot: Bot, chat_id: int, recordatorio_id: int, texto: str, fecha_hora: datetime):
-    """Programa un recordatorio en el scheduler."""
-    job_id = f"recordatorio_{recordatorio_id}"
+def schedule_reminder(bot: Bot, chat_id: int, reminder_id: int, text: str, datetime_obj: datetime):
+    """Schedule a reminder in the scheduler."""
+    job_id = f"reminder_{reminder_id}"
 
     scheduler.add_job(
-        enviar_recordatorio,
-        trigger=DateTrigger(run_date=fecha_hora),
-        args=[bot, chat_id, recordatorio_id, texto],
+        send_reminder,
+        trigger=DateTrigger(run_date=datetime_obj),
+        args=[bot, chat_id, reminder_id, text],
         id=job_id,
-        name=f"Recordatorio #{recordatorio_id}",
+        name=f"Recordatorio #{reminder_id}",
         misfire_grace_time=60
     )
 
-    logger.info(f"Recordatorio {recordatorio_id} programado para {fecha_hora}")
+    logger.info(f"Reminder {reminder_id} scheduled for {datetime_obj}")
 
-def cancelar_job_recordatorio(recordatorio_id: int):
-    """Cancela un job del scheduler."""
-    job_id = f"recordatorio_{recordatorio_id}"
+def cancel_reminder_job(reminder_id: int):
+    """Cancel a job from the scheduler."""
+    job_id = f"reminder_{reminder_id}"
     try:
         scheduler.remove_job(job_id)
-        logger.info(f"Job {job_id} cancelado")
+        logger.info(f"Job {job_id} cancelled")
         return True
     except Exception as e:
-        logger.warning(f"No se pudo cancelar job {job_id}: {e}")
+        logger.warning(f"Could not cancel job {job_id}: {e}")
         return False
 
-def cargar_recordatorios_pendientes(bot: Bot):
-    """Carga todos los recordatorios pendientes al reiniciar el bot."""
-    recordatorios = db.obtener_todos_recordatorios_activos()
-    ahora = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+def load_pending_reminders(bot: Bot):
+    """Load all pending reminders when restarting the bot."""
+    reminders = db.get_all_active_reminders()
+    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
 
-    for recordatorio in recordatorios:
-        fecha_hora = recordatorio['fecha_hora']
+    for reminder in reminders:
+        datetime_obj = reminder['datetime']
 
-        # Solo programar si la fecha es futura
-        if fecha_hora > ahora:
-            programar_recordatorio(
+        # Only schedule if the date is in the future
+        if datetime_obj > now:
+            schedule_reminder(
                 bot,
-                recordatorio['chat_id'],
-                recordatorio['id'],
-                recordatorio['texto'],
-                fecha_hora
+                reminder['chat_id'],
+                reminder['id'],
+                reminder['text'],
+                datetime_obj
             )
         else:
-            # Marcar como vencido si ya pasó la fecha
-            db.marcar_recordatorio_enviado(recordatorio['id'])
-            logger.info(f"Recordatorio {recordatorio['id']} vencido al reiniciar")
+            # Mark as expired if the date has already passed
+            db.mark_reminder_sent(reminder['id'])
+            logger.info(f"Reminder {reminder['id']} expired on restart")
 
-    logger.info(f"Cargados {len(recordatorios)} recordatorios pendientes")
+    logger.info(f"Loaded {len(reminders)} pending reminders")
 
 def shutdown_scheduler():
-    """Detiene el scheduler."""
+    """Stop the scheduler."""
     scheduler.shutdown()
-    logger.info("Scheduler detenido")
+    logger.info("Scheduler stopped")

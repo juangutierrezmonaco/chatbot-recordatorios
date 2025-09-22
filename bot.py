@@ -11,7 +11,7 @@ import db
 import scheduler
 import handlers
 
-# Configurar logging
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -19,81 +19,81 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
-    """Función principal del bot."""
+    """Main bot function."""
 
-    # Cargar variables de entorno desde .env
+    # Load environment variables from .env
     load_dotenv()
 
-    # Obtener token del bot
+    # Get bot token
     token = os.getenv('TELEGRAM_TOKEN')
     if not token:
-        logger.error("❌ Variable de entorno TELEGRAM_TOKEN no encontrada")
+        logger.error("❌ TELEGRAM_TOKEN environment variable not found")
         print("❌ Error: Define la variable de entorno TELEGRAM_TOKEN")
         print("Ejemplo: export TELEGRAM_TOKEN='tu_token_aqui'")
         sys.exit(1)
 
     try:
-        # Inicializar base de datos
+        # Initialize database
         db.init_db()
-        logger.info("✅ Base de datos inicializada")
+        logger.info("✅ Database initialized")
 
-        # Inicializar scheduler
+        # Initialize scheduler
         scheduler.init_scheduler()
-        logger.info("✅ Scheduler inicializado")
+        logger.info("✅ Scheduler initialized")
 
-        # Crear aplicación
+        # Create application
         application = Application.builder().token(token).build()
 
-        # Registrar handlers de comandos
+        # Register command handlers
         application.add_handler(CommandHandler("start", handlers.start_command))
-        application.add_handler(CommandHandler("recordar", handlers.recordar_command))
-        application.add_handler(CommandHandler("lista", handlers.lista_command))
-        application.add_handler(CommandHandler("cancelar", handlers.cancelar_command))
+        application.add_handler(CommandHandler("recordar", handlers.remind_command))
+        application.add_handler(CommandHandler("lista", handlers.list_command))
+        application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
 
-        # Handler para mensajes libres (lenguaje natural)
+        # Handler for free messages (natural language)
         application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            handlers.mensaje_libre
+            handlers.free_message
         ))
 
-        # Handler de errores
+        # Error handler
         application.add_error_handler(handlers.error_handler)
 
-        # Cargar recordatorios pendientes
-        scheduler.cargar_recordatorios_pendientes(application.bot)
-        logger.info("✅ Recordatorios pendientes cargados")
+        # Load pending reminders
+        scheduler.load_pending_reminders(application.bot)
+        logger.info("✅ Pending reminders loaded")
 
-        logger.info("🚀 Bot iniciado correctamente")
+        logger.info("🚀 Bot started successfully")
         print("🤖 Bot de recordatorios iniciado")
         print("📋 Presiona Ctrl+C para detener")
 
-        # Iniciar el bot
+        # Start the bot
         application.run_polling(allowed_updates=['message'])
 
     except InvalidToken:
-        logger.error("❌ Token de Telegram inválido")
+        logger.error("❌ Invalid Telegram token")
         print("❌ Error: Token de Telegram inválido")
         print("Verifica que TELEGRAM_TOKEN sea correcto")
         sys.exit(1)
 
     except KeyboardInterrupt:
-        logger.info("🛑 Deteniendo bot...")
+        logger.info("🛑 Stopping bot...")
         print("\n🛑 Deteniendo bot...")
 
     except Exception as e:
-        logger.error(f"❌ Error inesperado: {e}")
+        logger.error(f"❌ Unexpected error: {e}")
         print(f"❌ Error inesperado: {e}")
         sys.exit(1)
 
     finally:
-        # Limpiar recursos
+        # Clean up resources
         try:
             scheduler.shutdown_scheduler()
-            logger.info("✅ Scheduler detenido")
+            logger.info("✅ Scheduler stopped")
         except:
             pass
 
-        logger.info("👋 Bot detenido")
+        logger.info("👋 Bot stopped")
         print("👋 Bot detenido correctamente")
 
 if __name__ == '__main__':

@@ -5,127 +5,127 @@ from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "recordatorios.db"
+DB_PATH = "reminders.db"
 
 def init_db():
-    """Inicializa la base de datos y crea las tablas necesarias."""
+    """Initialize the database and create necessary tables."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS recordatorios (
+        CREATE TABLE IF NOT EXISTS reminders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER NOT NULL,
-            texto TEXT NOT NULL,
-            fecha_hora TEXT NOT NULL,
-            estado TEXT DEFAULT 'activo'
+            text TEXT NOT NULL,
+            datetime TEXT NOT NULL,
+            status TEXT DEFAULT 'active'
         )
     ''')
 
     conn.commit()
     conn.close()
-    logger.info("Base de datos inicializada")
+    logger.info("Database initialized")
 
-def agregar_recordatorio(chat_id: int, texto: str, fecha_hora: datetime) -> int:
-    """Agrega un nuevo recordatorio a la base de datos."""
+def add_reminder(chat_id: int, text: str, datetime_obj: datetime) -> int:
+    """Add a new reminder to the database."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        INSERT INTO recordatorios (chat_id, texto, fecha_hora, estado)
+        INSERT INTO reminders (chat_id, text, datetime, status)
         VALUES (?, ?, ?, ?)
-    ''', (chat_id, texto, fecha_hora.isoformat(), 'activo'))
+    ''', (chat_id, text, datetime_obj.isoformat(), 'active'))
 
-    recordatorio_id = cursor.lastrowid
+    reminder_id = cursor.lastrowid
     conn.commit()
     conn.close()
 
-    logger.info(f"Recordatorio {recordatorio_id} agregado para chat {chat_id}")
-    return recordatorio_id
+    logger.info(f"Reminder {reminder_id} added for chat {chat_id}")
+    return reminder_id
 
-def obtener_recordatorios_activos(chat_id: int) -> List[Dict]:
-    """Obtiene todos los recordatorios activos de un chat."""
+def get_active_reminders(chat_id: int) -> List[Dict]:
+    """Get all active reminders for a chat."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, texto, fecha_hora
-        FROM recordatorios
-        WHERE chat_id = ? AND estado = 'activo'
-        ORDER BY fecha_hora
+        SELECT id, text, datetime
+        FROM reminders
+        WHERE chat_id = ? AND status = 'active'
+        ORDER BY datetime
     ''', (chat_id,))
 
     rows = cursor.fetchall()
     conn.close()
 
-    recordatorios = []
+    reminders = []
     for row in rows:
-        recordatorios.append({
+        reminders.append({
             'id': row[0],
-            'texto': row[1],
-            'fecha_hora': datetime.fromisoformat(row[2])
+            'text': row[1],
+            'datetime': datetime.fromisoformat(row[2])
         })
 
-    return recordatorios
+    return reminders
 
-def obtener_todos_recordatorios_activos() -> List[Dict]:
-    """Obtiene todos los recordatorios activos de todos los chats."""
+def get_all_active_reminders() -> List[Dict]:
+    """Get all active reminders from all chats."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, chat_id, texto, fecha_hora
-        FROM recordatorios
-        WHERE estado = 'activo'
+        SELECT id, chat_id, text, datetime
+        FROM reminders
+        WHERE status = 'active'
     ''')
 
     rows = cursor.fetchall()
     conn.close()
 
-    recordatorios = []
+    reminders = []
     for row in rows:
-        recordatorios.append({
+        reminders.append({
             'id': row[0],
             'chat_id': row[1],
-            'texto': row[2],
-            'fecha_hora': datetime.fromisoformat(row[3])
+            'text': row[2],
+            'datetime': datetime.fromisoformat(row[3])
         })
 
-    return recordatorios
+    return reminders
 
-def cancelar_recordatorio(chat_id: int, recordatorio_id: int) -> bool:
-    """Cancela un recordatorio específico."""
+def cancel_reminder(chat_id: int, reminder_id: int) -> bool:
+    """Cancel a specific reminder."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        UPDATE recordatorios
-        SET estado = 'cancelado'
-        WHERE id = ? AND chat_id = ? AND estado = 'activo'
-    ''', (recordatorio_id, chat_id))
+        UPDATE reminders
+        SET status = 'cancelled'
+        WHERE id = ? AND chat_id = ? AND status = 'active'
+    ''', (reminder_id, chat_id))
 
     affected_rows = cursor.rowcount
     conn.commit()
     conn.close()
 
     if affected_rows > 0:
-        logger.info(f"Recordatorio {recordatorio_id} cancelado")
+        logger.info(f"Reminder {reminder_id} cancelled")
         return True
     else:
-        logger.warning(f"No se pudo cancelar recordatorio {recordatorio_id}")
+        logger.warning(f"Could not cancel reminder {reminder_id}")
         return False
 
-def marcar_recordatorio_enviado(recordatorio_id: int):
-    """Marca un recordatorio como enviado."""
+def mark_reminder_sent(reminder_id: int):
+    """Mark a reminder as sent."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        UPDATE recordatorios
-        SET estado = 'enviado'
+        UPDATE reminders
+        SET status = 'sent'
         WHERE id = ?
-    ''', (recordatorio_id,))
+    ''', (reminder_id,))
 
     conn.commit()
     conn.close()
-    logger.info(f"Recordatorio {recordatorio_id} marcado como enviado")
+    logger.info(f"Reminder {reminder_id} marked as sent")
