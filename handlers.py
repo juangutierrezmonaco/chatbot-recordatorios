@@ -15,7 +15,7 @@ DATEPARSER_SETTINGS = {
     'PREFER_DATES_FROM': 'future',
     'TIMEZONE': 'America/Argentina/Buenos_Aires',
     'DATE_ORDER': 'DMY',
-    'LANGUAGES': ['es']
+    'DEFAULT_LANGUAGES': ['es']
 }
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,26 +186,64 @@ def extraer_fecha_y_texto(texto: str):
             return fecha_hora, texto_limpio
 
     # Intentar con dateparser
-    # Buscar patrones de fecha/hora comunes
+    # Primero intentar patrones simples de fecha sin hora específica
+    patrones_fecha_sin_hora = [
+        r'\b(?:mañana|tomorrow)\b',
+        r'\b(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b',
+        r'\b(?:hoy|today)\b',
+        r'\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b'
+    ]
+
+    # Buscar patrones de fecha/hora específicos
     patrones_fecha = [
-        r'\b(?:mañana|tomorrow)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?|\d{1,2}\s*de\s*la\s*(?:mañana|tarde|noche))',
+        r'\b(?:mañana|tomorrow)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?|\d{1,2}\s*de\s*la\s*(?:mañana|tarde|noche)|antes\s*de\s*las?\s*\d{1,2})',
         r'\b(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)',
         r'\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)?',
         r'\b\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}\b',
         r'\b(?:hoy|today)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)',
         r'\ba\s*las?\s*\d{1,2}(?::\d{2})?\b',
+        r'\bantes\s*de\s*las?\s*\d{1,2}(?::\d{2})?\b',
         r'\b\d{1,2}:\d{2}\b'
     ]
 
     texto_fecha = None
     texto_resto = texto
+    usar_hora_defecto = False
 
+    # Primero buscar patrones con hora específica
     for patron in patrones_fecha:
         match = re.search(patron, texto, re.IGNORECASE)
         if match:
             texto_fecha = match.group(0)
-            texto_resto = texto.replace(texto_fecha, '').strip()
+            # Procesar "antes de las X"
+            if "antes de las" in texto_fecha.lower():
+                # Extraer la hora del "antes de las X"
+                hora_match = re.search(r'(\d{1,2})(?::\d{2})?', texto_fecha)
+                if hora_match:
+                    hora = int(hora_match.group(1))
+                    # Si dice "antes de las 5 de la tarde", convertir a 17:00
+                    if "tarde" in texto.lower() and hora <= 12:
+                        hora += 12
+                    # Crear nueva fecha con hora específica
+                    base_fecha = re.search(r'\b(?:mañana|tomorrow|hoy|today)\b', texto_fecha, re.IGNORECASE)
+                    if base_fecha:
+                        if base_fecha.group(0).lower() in ['mañana', 'tomorrow']:
+                            fecha_base = (datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(days=1)).strftime('%Y-%m-%d')
+                        else:
+                            fecha_base = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).strftime('%Y-%m-%d')
+                        texto_fecha = f"{fecha_base} {hora-1}:00"  # Una hora antes
+            texto_resto = texto.replace(match.group(0), '').strip()
             break
+
+    # Si no se encontró patrón con hora, buscar solo fecha
+    if not texto_fecha:
+        for patron in patrones_fecha_sin_hora:
+            match = re.search(patron, texto, re.IGNORECASE)
+            if match:
+                texto_fecha = match.group(0)
+                texto_resto = texto.replace(texto_fecha, '').strip()
+                usar_hora_defecto = True
+                break
 
     if not texto_fecha:
         # Intentar parseando todo el texto
@@ -218,8 +256,16 @@ def extraer_fecha_y_texto(texto: str):
     # Parsear la fecha encontrada
     fecha_parseada = dateparser.parse(texto_fecha, settings=DATEPARSER_SETTINGS)
 
+    # Si se parseó pero no tiene hora específica, agregar 9am por defecto
+    if fecha_parseada and usar_hora_defecto:
+        fecha_parseada = fecha_parseada.replace(hour=9, minute=0, second=0, microsecond=0)
+
     if not fecha_parseada:
         return None, None
+
+    # Asegurar que la fecha tenga timezone
+    if fecha_parseada.tzinfo is None:
+        fecha_parseada = pytz.timezone('America/Argentina/Buenos_Aires').localize(fecha_parseada)
 
     # Limpiar texto restante
     texto_resto = re.sub(r'^\s*que\s+', '', texto_resto, flags=re.IGNORECASE)
