@@ -29,6 +29,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /recordar <fecha/hora> <texto> - Crear recordatorio
 /lista - Ver recordatorios activos
 /hoy - Ver recordatorios de hoy
+/buscar <palabra> - Buscar recordatorios
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
@@ -93,6 +94,47 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         formatted_time = reminder['datetime'].strftime("%H:%M")
         message += f"🔔 **#{reminder['id']}** - {formatted_time}\n"
         message += f"   {reminder['text']}\n\n"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /buscar command."""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /buscar <palabra o frase>\n"
+            "Ejemplos:\n"
+            "• /buscar comida\n"
+            "• /buscar \"reunión trabajo\""
+        )
+        return
+
+    chat_id = update.effective_chat.id
+    keyword = ' '.join(context.args)
+
+    # Remove quotes if present
+    if (keyword.startswith('"') and keyword.endswith('"')) or (keyword.startswith("'") and keyword.endswith("'")):
+        keyword = keyword[1:-1]
+
+    if not keyword.strip():
+        await update.message.reply_text("❌ La búsqueda no puede estar vacía.")
+        return
+
+    reminders = db.search_reminders(chat_id, keyword)
+
+    if not reminders:
+        await update.message.reply_text(f"🔍 No se encontraron recordatorios con: \"{keyword}\"")
+        return
+
+    message = f"🔍 **Recordatorios encontrados con \"{keyword}\":**\n\n"
+
+    for reminder in reminders:
+        formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
+
+        # Highlight the keyword in the text (simple bold formatting)
+        highlighted_text = _highlight_keyword(reminder['text'], keyword)
+
+        message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
+        message += f"   {highlighted_text}\n\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -352,6 +394,23 @@ def _parse_reminder_ids(text: str) -> list:
             reminder_ids.append(int(part))
 
     return reminder_ids
+
+def _highlight_keyword(text: str, keyword: str) -> str:
+    """Highlight keyword in text using markdown bold formatting."""
+    # Case-insensitive replacement
+    import re
+    pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+
+    def replace_func(match):
+        return f"**{match.group()}**"
+
+    # Only highlight if the keyword isn't already part of markdown formatting
+    # Simple approach: avoid double-formatting
+    if "**" in text:
+        # If text already has markdown, don't highlight to avoid conflicts
+        return text
+
+    return pattern.sub(replace_func, text)
 
 def extract_date_and_text(text: str):
     """Extract date/time and reminder text."""

@@ -49,6 +49,7 @@ def main():
         application.add_handler(CommandHandler("recordar", handlers.remind_command))
         application.add_handler(CommandHandler("lista", handlers.list_command))
         application.add_handler(CommandHandler("hoy", handlers.today_command))
+        application.add_handler(CommandHandler("buscar", handlers.search_command))
         application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
 
         # Handler for free messages (natural language)

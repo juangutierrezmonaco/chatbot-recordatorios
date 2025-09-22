@@ -102,6 +102,35 @@ def get_today_reminders(chat_id: int) -> List[Dict]:
 
     return reminders
 
+def search_reminders(chat_id: int, keyword: str) -> List[Dict]:
+    """Search active reminders by keyword in text."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Use LIKE with wildcards for partial matching, case-insensitive
+    search_pattern = f"%{keyword.lower()}%"
+
+    cursor.execute('''
+        SELECT id, text, datetime
+        FROM reminders
+        WHERE chat_id = ? AND status = 'active'
+        AND LOWER(text) LIKE ?
+        ORDER BY datetime
+    ''', (chat_id, search_pattern))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': datetime.fromisoformat(row[2])
+        })
+
+    return reminders
+
 def get_all_active_reminders() -> List[Dict]:
     """Get all active reminders from all chats."""
     conn = sqlite3.connect(DB_PATH)
