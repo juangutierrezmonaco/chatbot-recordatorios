@@ -32,12 +32,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /dia <fecha> - Ver recordatorios de fecha específica
 /buscar <palabra> - Buscar recordatorios
 /historial - Ver recordatorios pasados
+/baul <texto> - Guardar nota en el baúl
+/lista_baul - Ver todas las notas del baúl
+/buscar_baul <palabra> - Buscar en el baúl
+/borrar_baul <id> - Eliminar nota del baúl
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
 • `/recordar mañana 18:00 comprar comida`
 • `/recordar en 30m apagar el horno`
 • `/recordar 2025-09-20 09:30 reunión con Juan`
+• `/baul No me gustó el vino en Bar Central`
+• `/baul Si voy a La Parolaccia, pedir ravioles al pesto`
 
 **Lenguaje natural:**
 También puedes escribir directamente:
@@ -260,6 +266,105 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message += f"_(Mostrando últimos {len(reminders)} recordatorios)_"
     await update.message.reply_text(message, parse_mode='Markdown')
+
+async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /baul command."""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /baul <texto>\n"
+            "Ejemplo: /baul No me gustó el vino en Bar Central"
+        )
+        return
+
+    chat_id = update.effective_chat.id
+    text = ' '.join(context.args)
+
+    if not text.strip():
+        await update.message.reply_text("❌ El texto del baúl no puede estar vacío.")
+        return
+
+    vault_id = db.add_vault_entry(chat_id, text)
+    await update.message.reply_text(f"🗄️ Guardado en el baúl (#{vault_id}): \"{text}\"")
+
+async def vault_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /lista_baul command."""
+    chat_id = update.effective_chat.id
+    entries = db.get_vault_entries(chat_id)
+
+    if not entries:
+        await update.message.reply_text("🗄️ Tu baúl está vacío.")
+        return
+
+    message = "🗄️ **Tu baúl de recordatorios:**\n\n"
+
+    for entry in entries:
+        formatted_date = entry['created_at'].strftime("%d/%m/%Y")
+        message += f"📝 **#{entry['id']}** - {formatted_date}\n"
+        message += f"   {entry['text']}\n\n"
+
+    message += f"_(Total: {len(entries)} entradas)_"
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /buscar_baul command."""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /buscar_baul <palabra>\n"
+            "Ejemplo: /buscar_baul vino"
+        )
+        return
+
+    chat_id = update.effective_chat.id
+    keyword = ' '.join(context.args)
+
+    # Remove quotes if present
+    if (keyword.startswith('"') and keyword.endswith('"')) or (keyword.startswith("'") and keyword.endswith("'")):
+        keyword = keyword[1:-1]
+
+    if not keyword.strip():
+        await update.message.reply_text("❌ La búsqueda no puede estar vacía.")
+        return
+
+    entries = db.search_vault_entries(chat_id, keyword)
+
+    if not entries:
+        await update.message.reply_text(f"🔍 No se encontraron entradas en el baúl con: \"{keyword}\"")
+        return
+
+    message = f"🔍 **Baúl - Entradas encontradas con \"{keyword}\":**\n\n"
+
+    for entry in entries:
+        formatted_date = entry['created_at'].strftime("%d/%m/%Y")
+
+        # Highlight the keyword in the text
+        highlighted_text = _highlight_keyword(entry['text'], keyword)
+
+        message += f"📝 **#{entry['id']}** - {formatted_date}\n"
+        message += f"   {highlighted_text}\n\n"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def vault_delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /borrar_baul command."""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /borrar_baul <id>\n"
+            "Ejemplo: /borrar_baul 5"
+        )
+        return
+
+    try:
+        vault_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ El ID debe ser un número.")
+        return
+
+    chat_id = update.effective_chat.id
+
+    if db.delete_vault_entry(chat_id, vault_id):
+        await update.message.reply_text(f"🗑️ Entrada #{vault_id} eliminada del baúl")
+    else:
+        await update.message.reply_text(f"❌ No se encontró la entrada #{vault_id} en tu baúl")
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /cancelar command."""

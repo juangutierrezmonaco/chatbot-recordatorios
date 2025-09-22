@@ -22,6 +22,15 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS vault (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("Database initialized")
@@ -314,3 +323,97 @@ def mark_reminder_sent(reminder_id: int):
     conn.commit()
     conn.close()
     logger.info(f"Reminder {reminder_id} marked as sent")
+
+# Vault functions
+def add_vault_entry(chat_id: int, text: str) -> int:
+    """Add a new entry to the vault."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    created_at = datetime.now().isoformat()
+
+    cursor.execute('''
+        INSERT INTO vault (chat_id, text, created_at)
+        VALUES (?, ?, ?)
+    ''', (chat_id, text, created_at))
+
+    vault_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Vault entry {vault_id} added for chat {chat_id}")
+    return vault_id
+
+def get_vault_entries(chat_id: int) -> List[Dict]:
+    """Get all vault entries for a chat."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, created_at
+        FROM vault
+        WHERE chat_id = ?
+        ORDER BY created_at DESC
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    entries = []
+    for row in rows:
+        entries.append({
+            'id': row[0],
+            'text': row[1],
+            'created_at': datetime.fromisoformat(row[2])
+        })
+
+    return entries
+
+def search_vault_entries(chat_id: int, keyword: str) -> List[Dict]:
+    """Search vault entries by keyword in text."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Use LIKE with wildcards for partial matching, case-insensitive
+    search_pattern = f"%{keyword.lower()}%"
+
+    cursor.execute('''
+        SELECT id, text, created_at
+        FROM vault
+        WHERE chat_id = ? AND LOWER(text) LIKE ?
+        ORDER BY created_at DESC
+    ''', (chat_id, search_pattern))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    entries = []
+    for row in rows:
+        entries.append({
+            'id': row[0],
+            'text': row[1],
+            'created_at': datetime.fromisoformat(row[2])
+        })
+
+    return entries
+
+def delete_vault_entry(chat_id: int, vault_id: int) -> bool:
+    """Delete a vault entry."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        DELETE FROM vault
+        WHERE id = ? AND chat_id = ?
+    ''', (vault_id, chat_id))
+
+    affected_rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    if affected_rows > 0:
+        logger.info(f"Vault entry {vault_id} deleted")
+        return True
+    else:
+        logger.warning(f"Could not delete vault entry {vault_id}")
+        return False

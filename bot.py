@@ -52,6 +52,10 @@ def main():
         application.add_handler(CommandHandler("dia", handlers.date_command))
         application.add_handler(CommandHandler("buscar", handlers.search_command))
         application.add_handler(CommandHandler("historial", handlers.history_command))
+        application.add_handler(CommandHandler("baul", handlers.vault_command))
+        application.add_handler(CommandHandler("lista_baul", handlers.vault_list_command))
+        application.add_handler(CommandHandler("buscar_baul", handlers.vault_search_command))
+        application.add_handler(CommandHandler("borrar_baul", handlers.vault_delete_command))
         application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
 
         # Handler for free messages (natural language)
