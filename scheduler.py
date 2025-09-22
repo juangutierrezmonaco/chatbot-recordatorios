@@ -51,6 +51,19 @@ def cancel_reminder_job(reminder_id: int):
         logger.warning(f"Could not cancel job {job_id}: {e}")
         return False
 
+def cancel_multiple_reminder_jobs(reminder_ids: list) -> dict:
+    """Cancel multiple jobs from the scheduler."""
+    cancelled = []
+    failed = []
+
+    for reminder_id in reminder_ids:
+        if cancel_reminder_job(reminder_id):
+            cancelled.append(reminder_id)
+        else:
+            failed.append(reminder_id)
+
+    return {"cancelled": cancelled, "failed": failed}
+
 def load_pending_reminders(bot: Bot):
     """Load all pending reminders when restarting the bot."""
     reminders = db.get_all_active_reminders()

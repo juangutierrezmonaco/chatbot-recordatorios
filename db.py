@@ -115,6 +115,54 @@ def cancel_reminder(chat_id: int, reminder_id: int) -> bool:
         logger.warning(f"Could not cancel reminder {reminder_id}")
         return False
 
+def cancel_multiple_reminders(chat_id: int, reminder_ids: List[int]) -> Dict[str, List[int]]:
+    """Cancel multiple reminders and return results."""
+    if not reminder_ids:
+        return {"cancelled": [], "not_found": []}
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cancelled = []
+    not_found = []
+
+    for reminder_id in reminder_ids:
+        cursor.execute('''
+            UPDATE reminders
+            SET status = 'cancelled'
+            WHERE id = ? AND chat_id = ? AND status = 'active'
+        ''', (reminder_id, chat_id))
+
+        if cursor.rowcount > 0:
+            cancelled.append(reminder_id)
+            logger.info(f"Reminder {reminder_id} cancelled")
+        else:
+            not_found.append(reminder_id)
+            logger.warning(f"Could not cancel reminder {reminder_id}")
+
+    conn.commit()
+    conn.close()
+
+    return {"cancelled": cancelled, "not_found": not_found}
+
+def cancel_all_reminders(chat_id: int) -> int:
+    """Cancel all active reminders for a chat and return count."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE reminders
+        SET status = 'cancelled'
+        WHERE chat_id = ? AND status = 'active'
+    ''', (chat_id,))
+
+    affected_rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Cancelled {affected_rows} reminders for chat {chat_id}")
+    return affected_rows
+
 def mark_reminder_sent(reminder_id: int):
     """Mark a reminder as sent."""
     conn = sqlite3.connect(DB_PATH)

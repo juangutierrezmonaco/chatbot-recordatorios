@@ -80,24 +80,68 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /cancelar command."""
     if not context.args:
         await update.message.reply_text(
-            "❌ Uso: /cancelar <id>\n"
-            "Ejemplo: /cancelar 3"
+            "❌ Uso: /cancelar <id(s)>\n"
+            "Ejemplos:\n"
+            "• /cancelar 3\n"
+            "• /cancelar 1,2,3\n"
+            "• /cancelar 1-5\n"
+            "• /cancelar 1 2 3\n"
+            "• /cancelar todos"
         )
         return
 
-    try:
-        reminder_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("❌ El ID debe ser un número.")
+    chat_id = update.effective_chat.id
+    full_text = ' '.join(context.args)
+
+    # Handle "todos" case
+    if full_text.lower() in ['todos', 'all']:
+        # Get all active reminder IDs before cancelling
+        active_reminders = db.get_active_reminders(chat_id)
+        reminder_ids = [r['id'] for r in active_reminders]
+
+        if reminder_ids:
+            cancelled_count = db.cancel_all_reminders(chat_id)
+            scheduler.cancel_multiple_reminder_jobs(reminder_ids)
+            await update.message.reply_text(f"❌ Se cancelaron {cancelled_count} recordatorios")
+        else:
+            await update.message.reply_text("📝 No tienes recordatorios activos para cancelar")
         return
 
-    chat_id = update.effective_chat.id
+    # Parse reminder IDs from various formats
+    reminder_ids = _parse_reminder_ids(full_text)
 
-    if db.cancel_reminder(chat_id, reminder_id):
-        scheduler.cancel_reminder_job(reminder_id)
-        await update.message.reply_text(f"❌ Recordatorio #{reminder_id} cancelado")
+    if not reminder_ids:
+        await update.message.reply_text("❌ Formato inválido. Usa números separados por comas, espacios o rangos (ej: 1-5)")
+        return
+
+    # Cancel multiple reminders
+    if len(reminder_ids) == 1:
+        # Single reminder - use original logic for backward compatibility
+        reminder_id = reminder_ids[0]
+        if db.cancel_reminder(chat_id, reminder_id):
+            scheduler.cancel_reminder_job(reminder_id)
+            await update.message.reply_text(f"❌ Recordatorio #{reminder_id} cancelado")
+        else:
+            await update.message.reply_text(f"❌ No se encontró el recordatorio #{reminder_id}")
     else:
-        await update.message.reply_text(f"❌ No se encontró el recordatorio #{reminder_id}")
+        # Multiple reminders
+        db_result = db.cancel_multiple_reminders(chat_id, reminder_ids)
+        scheduler.cancel_multiple_reminder_jobs(db_result["cancelled"])
+
+        # Build response message
+        message_parts = []
+        if db_result["cancelled"]:
+            cancelled_str = ", ".join(f"#{id}" for id in db_result["cancelled"])
+            message_parts.append(f"❌ Cancelados: {cancelled_str}")
+
+        if db_result["not_found"]:
+            not_found_str = ", ".join(f"#{id}" for id in db_result["not_found"])
+            message_parts.append(f"❓ No encontrados: {not_found_str}")
+
+        if not message_parts:
+            message_parts.append("❌ No se pudieron cancelar los recordatorios")
+
+        await update.message.reply_text("\n".join(message_parts))
 
 async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle natural language messages."""
@@ -253,6 +297,41 @@ def _smart_hour_parse(hour: int, minute: int, now: datetime) -> datetime:
                 return pm_time
             else:
                 return am_time + timedelta(days=1)
+
+def _parse_reminder_ids(text: str) -> list:
+    """Parse reminder IDs from various formats."""
+    reminder_ids = []
+
+    # Remove extra whitespace
+    text = text.strip()
+
+    # Handle comma-separated: "1,2,3"
+    if ',' in text:
+        parts = text.split(',')
+        for part in parts:
+            part = part.strip()
+            if part.isdigit():
+                reminder_ids.append(int(part))
+        return reminder_ids
+
+    # Handle ranges: "1-5"
+    if '-' in text and len(text.split()) == 1:
+        try:
+            start, end = text.split('-')
+            start, end = int(start.strip()), int(end.strip())
+            if start <= end:
+                reminder_ids.extend(range(start, end + 1))
+                return reminder_ids
+        except ValueError:
+            pass
+
+    # Handle space-separated: "1 2 3"
+    parts = text.split()
+    for part in parts:
+        if part.isdigit():
+            reminder_ids.append(int(part))
+
+    return reminder_ids
 
 def extract_date_and_text(text: str):
     """Extract date/time and reminder text."""
