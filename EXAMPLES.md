@@ -188,7 +188,7 @@ Anotá que Juan del equipo de ventas es muy eficiente
 ```
 
 #### 🏥 Salud
-**Palabras clave:** médico, doctor, hospital, clínica, turno, consulta, medicina, pastilla, tratamiento, análisis, estudio, salud
+**Palabras clave:** médico, doctor, dr., hospital, clínica, turno, consulta, medicina, pastilla, tratamiento, análisis, estudio, salud, dentista, odontólogo, psicólogo, terapia, farmacia, receta
 
 **Ejemplos:**
 ```
@@ -198,7 +198,7 @@ Recordame en 8 horas tomar la pastilla
 ```
 
 #### 👥 Personal
-**Palabras clave:** cumpleaños, familia, mamá, papá, hermano, hermana, hijo, hija, esposo, esposa, novio, novia, amigo, personal
+**Palabras clave:** cumpleaños, familia, mamá, papá, hermano, hermana, hijo, hija, esposo, esposa, novio, novia, amigo, personal, recomendó, recomienda, libro, sugiere, aconseja, le gusta, prefiere, le encanta
 
 **Ejemplos:**
 ```
@@ -218,7 +218,7 @@ Recordame ir al supermercado
 ```
 
 #### 🎬 Entretenimiento
-**Palabras clave:** cine, película, teatro, concierto, partido, show, restaurante, bar, fiesta, vacaciones, viaje
+**Palabras clave:** cine, película, teatro, concierto, partido, show, restaurante, bar, fiesta, vacaciones, viaje, música, banda, artista, baile, discoteca, pub, parrilla
 
 **Ejemplos:**
 ```
@@ -228,7 +228,7 @@ Anotá que el bar La Madelón tiene buena música
 ```
 
 #### 🏠 Hogar
-**Palabras clave:** casa, hogar, limpieza, limpiar, cocinar, cocina, jardín, plantas, mascotas, perro, gato, reparar, arreglar
+**Palabras clave:** casa, hogar, limpieza, limpiar, cocinar, cocina, jardín, plantas, mascotas, perro, gato, reparar, arreglar, filtro, aire acondicionado, calefacción, electricidad, plomería, mantenimiento
 
 **Ejemplos:**
 ```

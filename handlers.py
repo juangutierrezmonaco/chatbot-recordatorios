@@ -114,14 +114,17 @@ def extract_category_from_text(text: str) -> str:
         return 'trabajo'
 
     # Health-related keywords
-    health_keywords = ['médico', 'doctor', 'hospital', 'clínica', 'turno', 'consulta', 'medicina',
-                       'pastilla', 'tratamiento', 'análisis', 'estudio', 'salud']
+    health_keywords = ['médico', 'doctor', 'dr.', 'dr ', 'hospital', 'clínica', 'turno', 'consulta',
+                       'medicina', 'pastilla', 'tratamiento', 'análisis', 'estudio', 'salud',
+                       'dentista', 'odontólogo', 'psicólogo', 'terapia', 'farmacia', 'receta']
     if any(keyword in text_lower for keyword in health_keywords):
         return 'salud'
 
     # Personal/family keywords
     personal_keywords = ['cumpleaños', 'familia', 'mamá', 'papá', 'hermano', 'hermana', 'hijo',
-                         'hija', 'esposo', 'esposa', 'novio', 'novia', 'amigo', 'personal']
+                         'hija', 'esposo', 'esposa', 'novio', 'novia', 'amigo', 'personal',
+                         'recomendó', 'recomienda', 'libro', 'sugiere', 'aconseja', 'le gusta',
+                         'prefiere', 'odia', 'le encanta']
     if any(keyword in text_lower for keyword in personal_keywords):
         return 'personal'
 
@@ -133,13 +136,15 @@ def extract_category_from_text(text: str) -> str:
 
     # Entertainment keywords
     entertainment_keywords = ['cine', 'película', 'teatro', 'concierto', 'partido', 'show',
-                             'restaurante', 'bar', 'fiesta', 'vacaciones', 'viaje']
+                             'restaurante', 'bar', 'fiesta', 'vacaciones', 'viaje', 'música',
+                             'banda', 'artista', 'baile', 'discoteca', 'pub', 'parrilla']
     if any(keyword in text_lower for keyword in entertainment_keywords):
         return 'entretenimiento'
 
     # Home/maintenance keywords
     home_keywords = ['casa', 'hogar', 'limpieza', 'limpiar', 'cocinar', 'cocina', 'jardín',
-                     'plantas', 'mascotas', 'perro', 'gato', 'reparar', 'arreglar']
+                     'plantas', 'mascotas', 'perro', 'gato', 'reparar', 'arreglar', 'filtro',
+                     'aire acondicionado', 'calefacción', 'electricidad', 'plomería', 'mantenimiento']
     if any(keyword in text_lower for keyword in home_keywords):
         return 'hogar'
 
