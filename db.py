@@ -247,11 +247,18 @@ def get_all_active_reminders() -> List[Dict]:
 
     reminders = []
     for row in rows:
+        # Parse datetime and ensure it has timezone info
+        dt = datetime.fromisoformat(row[3])
+        if dt.tzinfo is None:
+            # Assume Buenos Aires timezone for naive datetimes
+            import pytz
+            dt = pytz.timezone('America/Argentina/Buenos_Aires').localize(dt)
+
         reminders.append({
             'id': row[0],
             'chat_id': row[1],
             'text': row[2],
-            'datetime': datetime.fromisoformat(row[3])
+            'datetime': dt
         })
 
     return reminders
