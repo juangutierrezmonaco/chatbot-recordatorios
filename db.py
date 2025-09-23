@@ -2,13 +2,27 @@ import sqlite3
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional
+from migrations import MigrationManager
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = "reminders.db"
 
 def init_db():
-    """Initialize the database and create necessary tables."""
+    """Initialize the database and run migrations."""
+    # Run migrations first
+    migration_manager = MigrationManager(DB_PATH)
+    success = migration_manager.run_migrations()
+
+    if success:
+        logger.info("Database initialized with migrations")
+    else:
+        logger.error("Database migration failed")
+        # Fallback to old schema creation
+        _create_legacy_schema()
+
+def _create_legacy_schema():
+    """Fallback schema creation if migrations fail."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -18,7 +32,8 @@ def init_db():
             chat_id INTEGER NOT NULL,
             text TEXT NOT NULL,
             datetime TEXT NOT NULL,
-            status TEXT DEFAULT 'active'
+            status TEXT DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
@@ -27,13 +42,13 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER NOT NULL,
             text TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
     conn.commit()
     conn.close()
-    logger.info("Database initialized")
+    logger.info("Legacy database schema created")
 
 def add_reminder(chat_id: int, text: str, datetime_obj: datetime) -> int:
     """Add a new reminder to the database."""
