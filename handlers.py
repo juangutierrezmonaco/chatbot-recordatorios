@@ -33,6 +33,49 @@ def register_or_update_user(update: Update) -> int:
         language_code=user.language_code or 'es'
     )
 
+def extract_category_from_text(text: str) -> str:
+    """Extract category from text based on keywords."""
+    text_lower = text.lower()
+
+    # Work-related keywords
+    work_keywords = ['trabajo', 'reunión', 'meeting', 'oficina', 'jefe', 'cliente', 'proyecto',
+                     'presentación', 'deadline', 'entrega', 'equipo', 'empresa', 'negocio']
+    if any(keyword in text_lower for keyword in work_keywords):
+        return 'trabajo'
+
+    # Health-related keywords
+    health_keywords = ['médico', 'doctor', 'hospital', 'clínica', 'turno', 'consulta', 'medicina',
+                       'pastilla', 'tratamiento', 'análisis', 'estudio', 'salud']
+    if any(keyword in text_lower for keyword in health_keywords):
+        return 'salud'
+
+    # Personal/family keywords
+    personal_keywords = ['cumpleaños', 'familia', 'mamá', 'papá', 'hermano', 'hermana', 'hijo',
+                         'hija', 'esposo', 'esposa', 'novio', 'novia', 'amigo', 'personal']
+    if any(keyword in text_lower for keyword in personal_keywords):
+        return 'personal'
+
+    # Shopping/errands keywords
+    shopping_keywords = ['comprar', 'supermercado', 'tienda', 'mercado', 'shopping', 'pagar',
+                        'banco', 'farmacia', 'ferretería', 'verdulería']
+    if any(keyword in text_lower for keyword in shopping_keywords):
+        return 'compras'
+
+    # Entertainment keywords
+    entertainment_keywords = ['cine', 'película', 'teatro', 'concierto', 'partido', 'show',
+                             'restaurante', 'bar', 'fiesta', 'vacaciones', 'viaje']
+    if any(keyword in text_lower for keyword in entertainment_keywords):
+        return 'entretenimiento'
+
+    # Home/maintenance keywords
+    home_keywords = ['casa', 'hogar', 'limpieza', 'limpiar', 'cocinar', 'cocina', 'jardín',
+                     'plantas', 'mascotas', 'perro', 'gato', 'reparar', 'arreglar']
+    if any(keyword in text_lower for keyword in home_keywords):
+        return 'hogar'
+
+    # Default category
+    return 'general'
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /start command."""
     # Register or update user
@@ -309,8 +352,9 @@ async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ El texto de la bitácora no puede estar vacío.")
         return
 
-    vault_id = db.add_vault_entry(chat_id, text)
-    await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{text}\"")
+    category = extract_category_from_text(text)
+    vault_id = db.add_vault_entry(chat_id, text, category)
+    await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{text}\" [#{category}]")
 
 async def vault_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /lista_bitacora command."""
@@ -502,8 +546,9 @@ async def process_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         await update.message.reply_text("❌ La fecha debe ser en el futuro.")
         return
 
-    # Save to DB and schedule
-    reminder_id = db.add_reminder(chat_id, reminder_text, datetime_obj)
+    # Extract category and save to DB
+    category = extract_category_from_text(reminder_text)
+    reminder_id = db.add_reminder(chat_id, reminder_text, datetime_obj, category)
     scheduler.schedule_reminder(
         context.bot, chat_id, reminder_id, reminder_text, datetime_obj
     )
@@ -511,7 +556,7 @@ async def process_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     # Confirm to user
     formatted_date = datetime_obj.strftime("%d/%m/%Y %H:%M")
     await update.message.reply_text(
-        f"✅ Dale, te aviso el {formatted_date}: \"{reminder_text}\" (ID #{reminder_id})"
+        f"✅ Dale, te aviso el {formatted_date}: \"{reminder_text}\" [#{category}] (ID #{reminder_id})"
     )
 
 def _smart_day_parse(day: int, now: datetime) -> datetime:
@@ -993,8 +1038,9 @@ async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
             if clean_text:
                 chat_id = update.effective_chat.id
-                vault_id = db.add_vault_entry(chat_id, clean_text)
-                await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{clean_text}\"")
+                category = extract_category_from_text(clean_text)
+                vault_id = db.add_vault_entry(chat_id, clean_text, category)
+                await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{clean_text}\" [#{category}]")
             return
 
         # Check if it's a reminder attempt

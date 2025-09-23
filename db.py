@@ -50,21 +50,21 @@ def _create_legacy_schema():
     conn.close()
     logger.info("Legacy database schema created")
 
-def add_reminder(chat_id: int, text: str, datetime_obj: datetime) -> int:
+def add_reminder(chat_id: int, text: str, datetime_obj: datetime, category: str = 'general') -> int:
     """Add a new reminder to the database."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        INSERT INTO reminders (chat_id, text, datetime, status)
-        VALUES (?, ?, ?, ?)
-    ''', (chat_id, text, datetime_obj.isoformat(), 'active'))
+        INSERT INTO reminders (chat_id, text, datetime, status, category)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (chat_id, text, datetime_obj.isoformat(), 'active', category))
 
     reminder_id = cursor.lastrowid
     conn.commit()
     conn.close()
 
-    logger.info(f"Reminder {reminder_id} added for chat {chat_id}")
+    logger.info(f"Reminder {reminder_id} added for chat {chat_id} with category '{category}'")
     return reminder_id
 
 def get_active_reminders(chat_id: int) -> List[Dict]:
@@ -73,7 +73,7 @@ def get_active_reminders(chat_id: int) -> List[Dict]:
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, text, datetime
+        SELECT id, text, datetime, category
         FROM reminders
         WHERE chat_id = ? AND status = 'active'
         ORDER BY datetime
@@ -87,7 +87,8 @@ def get_active_reminders(chat_id: int) -> List[Dict]:
         reminders.append({
             'id': row[0],
             'text': row[1],
-            'datetime': datetime.fromisoformat(row[2])
+            'datetime': datetime.fromisoformat(row[2]),
+            'category': row[3] if len(row) > 3 else 'general'
         })
 
     return reminders
@@ -340,7 +341,7 @@ def mark_reminder_sent(reminder_id: int):
     logger.info(f"Reminder {reminder_id} marked as sent")
 
 # Vault functions
-def add_vault_entry(chat_id: int, text: str) -> int:
+def add_vault_entry(chat_id: int, text: str, category: str = 'general') -> int:
     """Add a new entry to the vault."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -348,15 +349,15 @@ def add_vault_entry(chat_id: int, text: str) -> int:
     created_at = datetime.now().isoformat()
 
     cursor.execute('''
-        INSERT INTO vault (chat_id, text, created_at)
-        VALUES (?, ?, ?)
-    ''', (chat_id, text, created_at))
+        INSERT INTO vault (chat_id, text, created_at, category)
+        VALUES (?, ?, ?, ?)
+    ''', (chat_id, text, created_at, category))
 
     vault_id = cursor.lastrowid
     conn.commit()
     conn.close()
 
-    logger.info(f"Vault entry {vault_id} added for chat {chat_id}")
+    logger.info(f"Vault entry {vault_id} added for chat {chat_id} with category '{category}'")
     return vault_id
 
 def get_vault_entries(chat_id: int) -> List[Dict]:
@@ -365,7 +366,7 @@ def get_vault_entries(chat_id: int) -> List[Dict]:
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, text, created_at
+        SELECT id, text, created_at, category
         FROM vault
         WHERE chat_id = ?
         ORDER BY created_at DESC
@@ -379,7 +380,8 @@ def get_vault_entries(chat_id: int) -> List[Dict]:
         entries.append({
             'id': row[0],
             'text': row[1],
-            'created_at': datetime.fromisoformat(row[2])
+            'created_at': datetime.fromisoformat(row[2]),
+            'category': row[3] if len(row) > 3 else 'general'
         })
 
     return entries
@@ -393,7 +395,7 @@ def search_vault_entries(chat_id: int, keyword: str) -> List[Dict]:
     search_pattern = f"%{keyword.lower()}%"
 
     cursor.execute('''
-        SELECT id, text, created_at
+        SELECT id, text, created_at, category
         FROM vault
         WHERE chat_id = ? AND LOWER(text) LIKE ?
         ORDER BY created_at DESC
@@ -407,7 +409,8 @@ def search_vault_entries(chat_id: int, keyword: str) -> List[Dict]:
         entries.append({
             'id': row[0],
             'text': row[1],
-            'created_at': datetime.fromisoformat(row[2])
+            'created_at': datetime.fromisoformat(row[2]),
+            'category': row[3] if len(row) > 3 else 'general'
         })
 
     return entries
