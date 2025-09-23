@@ -33,18 +33,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /dia <fecha> - Ver recordatorios de fecha específica
 /buscar <palabra> - Buscar recordatorios
 /historial - Ver recordatorios pasados
-/baul <texto> - Guardar nota en el baúl
-/lista_baul - Ver todas las notas del baúl
-/buscar_baul <palabra> - Buscar en el baúl
-/borrar_baul <id> - Eliminar nota del baúl
+/bitacora <texto> - Guardar nota en la bitácora
+/lista_bitacora - Ver todas las notas de la bitácora
+/buscar_bitacora <palabra> - Buscar en la bitácora
+/borrar_bitacora <id> - Eliminar nota de la bitácora
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
 • `/recordar mañana 18:00 comprar comida`
 • `/recordar en 30m apagar el horno`
 • `/recordar 2025-09-20 09:30 reunión con Juan`
-• `/baul No me gustó el vino en Bar Central`
-• `/baul Si voy a La Parolaccia, pedir ravioles al pesto`
+• `/bitacora No me gustó el vino en Bar Central`
+• `/bitacora Si voy a La Parolaccia, pedir ravioles al pesto`
 
 **Lenguaje natural:**
 También puedes escribir directamente:
@@ -274,11 +274,11 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /baul command."""
+    """Handle the /bitacora command."""
     if not context.args:
         await update.message.reply_text(
-            "❌ Uso: /baul <texto>\n"
-            "Ejemplo: /baul No me gustó el vino en Bar Central"
+            "❌ Uso: /bitacora <texto>\n"
+            "Ejemplo: /bitacora No me gustó el vino en Bar Central"
         )
         return
 
@@ -286,22 +286,22 @@ async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = ' '.join(context.args)
 
     if not text.strip():
-        await update.message.reply_text("❌ El texto del baúl no puede estar vacío.")
+        await update.message.reply_text("❌ El texto de la bitácora no puede estar vacío.")
         return
 
     vault_id = db.add_vault_entry(chat_id, text)
-    await update.message.reply_text(f"🗄️ Guardado en el baúl (#{vault_id}): \"{text}\"")
+    await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{text}\"")
 
 async def vault_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /lista_baul command."""
+    """Handle the /lista_bitacora command."""
     chat_id = update.effective_chat.id
     entries = db.get_vault_entries(chat_id)
 
     if not entries:
-        await update.message.reply_text("🗄️ Tu baúl está vacío.")
+        await update.message.reply_text("📖 Tu bitácora está vacía.")
         return
 
-    message = "🗄️ **Tu baúl de recordatorios:**\n\n"
+    message = "📖 **Tu bitácora:**\n\n"
 
     for entry in entries:
         formatted_date = entry['created_at'].strftime("%d/%m/%Y")
@@ -312,11 +312,11 @@ async def vault_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /buscar_baul command."""
+    """Handle the /buscar_bitacora command."""
     if not context.args:
         await update.message.reply_text(
-            "❌ Uso: /buscar_baul <palabra>\n"
-            "Ejemplo: /buscar_baul vino"
+            "❌ Uso: /buscar_bitacora <palabra>\n"
+            "Ejemplo: /buscar_bitacora vino"
         )
         return
 
@@ -334,10 +334,10 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     entries = db.search_vault_entries(chat_id, keyword)
 
     if not entries:
-        await update.message.reply_text(f"🔍 No se encontraron entradas en el baúl con: \"{keyword}\"")
+        await update.message.reply_text(f"🔍 No se encontraron entradas en la bitácora con: \"{keyword}\"")
         return
 
-    message = f"🔍 **Baúl - Entradas encontradas con \"{keyword}\":**\n\n"
+    message = f"🔍 **Bitácora - Entradas encontradas con \"{keyword}\":**\n\n"
 
     for entry in entries:
         formatted_date = entry['created_at'].strftime("%d/%m/%Y")
@@ -351,11 +351,11 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def vault_delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /borrar_baul command."""
+    """Handle the /borrar_bitacora command."""
     if not context.args:
         await update.message.reply_text(
-            "❌ Uso: /borrar_baul <id>\n"
-            "Ejemplo: /borrar_baul 5"
+            "❌ Uso: /borrar_bitacora <id>\n"
+            "Ejemplo: /borrar_bitacora 5"
         )
         return
 
@@ -368,9 +368,9 @@ async def vault_delete_command(update: Update, context: ContextTypes.DEFAULT_TYP
     chat_id = update.effective_chat.id
 
     if db.delete_vault_entry(chat_id, vault_id):
-        await update.message.reply_text(f"🗑️ Entrada #{vault_id} eliminada del baúl")
+        await update.message.reply_text(f"🗑️ Entrada #{vault_id} eliminada de la bitácora")
     else:
-        await update.message.reply_text(f"❌ No se encontró la entrada #{vault_id} en tu baúl")
+        await update.message.reply_text(f"❌ No se encontró la entrada #{vault_id} en tu bitácora")
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /cancelar command."""
@@ -968,7 +968,7 @@ async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             if clean_text:
                 chat_id = update.effective_chat.id
                 vault_id = db.add_vault_entry(chat_id, clean_text)
-                await update.message.reply_text(f"🗄️ Guardado en el baúl (#{vault_id}): \"{clean_text}\"")
+                await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{clean_text}\"")
             return
 
         # Check if it's a reminder attempt
@@ -980,7 +980,7 @@ async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await update.message.reply_text(
                 "🤔 No estoy seguro si es un recordatorio o una nota. Puedes:\n"
                 "• Para recordatorios: incluye fecha/hora (ej: 'recordame mañana...')\n"
-                "• Para notas del baúl: di 'recordar que...' o 'nota que...'"
+                "• Para notas de la bitácora: di 'recordar que...' o 'nota que...'"
             )
 
     except Exception as e:
