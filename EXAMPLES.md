@@ -114,7 +114,7 @@ Muestra todas las entradas guardadas en la bitácora, ordenadas por fecha.
 
 ### Ver Entradas de la Bitácora
 ```
-/listar bitacora
+/listarBitacora
 /lista_bitacora (compatible)
 ```
 Muestra todas las entradas guardadas en la bitácora, ordenadas por fecha.
@@ -123,9 +123,9 @@ Muestra todas las entradas guardadas en la bitácora, ordenadas por fecha.
 
 #### Con comando tradicional
 ```
-/buscar bitacora vino
+/buscarBitacora vino
 /buscar_bitacora restaurante (compatible)
-/buscar bitacora "pedro me"
+/buscarBitacora "pedro me"
 ```
 
 #### Con comando "Averigua" (lenguaje natural)
@@ -145,14 +145,14 @@ Averigua #entretenimiento
 
 #### Búsqueda por categoría
 ```
-/buscar bitacora categoria:bares
-/buscar bitacora #entretenimiento
-/buscar bitacora categoría:lugares
+/buscarBitacora categoria:bares
+/buscarBitacora #entretenimiento
+/buscarBitacora categoría:lugares
 ```
 
 ### Eliminar de la Bitácora
 ```
-/borrar bitacora 3
+/borrarBitacora 3
 /borrar_bitacora 3 (compatible)
 ```
 Elimina la entrada #3 de tu bitácora.

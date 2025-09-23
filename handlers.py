@@ -164,9 +164,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /buscar <palabra> - Buscar recordatorios
 /historial - Ver recordatorios pasados
 /bitacora <texto> - Guardar nota en la bitácora
-/listar bitacora - Ver todas las notas de la bitácora
-/buscar bitacora <palabra> - Buscar en la bitácora
-/borrar bitacora <id> - Eliminar nota de la bitácora
+/listarBitacora - Ver todas las notas de la bitácora
+/buscarBitacora <palabra> - Buscar en la bitácora
+/borrarBitacora <id> - Eliminar nota de la bitácora
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
@@ -739,29 +739,28 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # Check for friendly command patterns
-    elif text.startswith('/listar bitacora') or text.startswith('/listar bitácora'):
+    # Check for camelCase command patterns
+    elif text.startswith('/listarBitacora'):
         await vault_list_command(update, context)
         return
 
-    elif text.startswith('/buscar bitacora') or text.startswith('/buscar bitácora'):
-        # Extract search term after "buscar bitacora "
-        search_part = text.replace('/buscar bitacora', '').replace('/buscar bitácora', '').strip()
+    elif text.startswith('/buscarBitacora'):
+        # Extract search term after "buscarBitacora "
+        search_part = text.replace('/buscarBitacora', '').strip()
         if search_part:
             # Simulate context.args for the existing function
             class FakeContext:
                 def __init__(self, args):
                     self.args = args.split()
             fake_context = FakeContext(search_part)
-            update_copy = update
-            await vault_search_command(update_copy, fake_context)
+            await vault_search_command(update, fake_context)
         else:
             await vault_search_command(update, context)
         return
 
-    elif text.startswith('/borrar bitacora') or text.startswith('/borrar bitácora'):
-        # Extract ID after "borrar bitacora "
-        id_part = text.replace('/borrar bitacora', '').replace('/borrar bitácora', '').strip()
+    elif text.startswith('/borrarBitacora'):
+        # Extract ID after "borrarBitacora "
+        id_part = text.replace('/borrarBitacora', '').strip()
         if id_part:
             # Simulate context.args for the existing function
             class FakeContext:
