@@ -432,3 +432,110 @@ def delete_vault_entry(chat_id: int, vault_id: int) -> bool:
     else:
         logger.warning(f"Could not delete vault entry {vault_id}")
         return False
+
+# User management functions
+def create_or_update_user(chat_id: int, username: str = None, first_name: str = None,
+                         last_name: str = None, is_bot: bool = False, language_code: str = 'es') -> int:
+    """Create or update user information."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+
+    # Try to update existing user first
+    cursor.execute('''
+        UPDATE users
+        SET username = ?, first_name = ?, last_name = ?, is_bot = ?,
+            language_code = ?, last_activity = ?
+        WHERE chat_id = ?
+    ''', (username, first_name, last_name, int(is_bot), language_code, now, chat_id))
+
+    if cursor.rowcount == 0:
+        # User doesn't exist, create new one
+        cursor.execute('''
+            INSERT INTO users (chat_id, username, first_name, last_name, is_bot, language_code, created_at, last_activity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (chat_id, username, first_name, last_name, int(is_bot), language_code, now, now))
+        user_id = cursor.lastrowid
+        logger.info(f"Created new user {user_id} for chat {chat_id}")
+    else:
+        # Get existing user ID
+        cursor.execute('SELECT id FROM users WHERE chat_id = ?', (chat_id,))
+        user_id = cursor.fetchone()[0]
+        logger.debug(f"Updated user {user_id} for chat {chat_id}")
+
+    conn.commit()
+    conn.close()
+    return user_id
+
+def get_user_by_chat_id(chat_id: int) -> Optional[Dict]:
+    """Get user information by chat_id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, chat_id, username, first_name, last_name, is_bot, language_code, created_at, last_activity
+        FROM users WHERE chat_id = ?
+    ''', (chat_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            'id': row[0],
+            'chat_id': row[1],
+            'username': row[2],
+            'first_name': row[3],
+            'last_name': row[4],
+            'is_bot': bool(row[5]),
+            'language_code': row[6],
+            'created_at': datetime.fromisoformat(row[7]),
+            'last_activity': datetime.fromisoformat(row[8])
+        }
+    return None
+
+def update_user_activity(chat_id: int) -> bool:
+    """Update user's last activity timestamp."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+    cursor.execute('''
+        UPDATE users SET last_activity = ? WHERE chat_id = ?
+    ''', (now, chat_id))
+
+    affected_rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return affected_rows > 0
+
+def get_all_users() -> List[Dict]:
+    """Get all users for admin purposes."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, chat_id, username, first_name, last_name, is_bot, language_code, created_at, last_activity
+        FROM users ORDER BY created_at DESC
+    ''')
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    users = []
+    for row in rows:
+        users.append({
+            'id': row[0],
+            'chat_id': row[1],
+            'username': row[2],
+            'first_name': row[3],
+            'last_name': row[4],
+            'is_bot': bool(row[5]),
+            'language_code': row[6],
+            'created_at': datetime.fromisoformat(row[7]),
+            'last_activity': datetime.fromisoformat(row[8])
+        })
+
+    return users

@@ -19,8 +19,25 @@ DATEPARSER_SETTINGS = {
     'DEFAULT_LANGUAGES': ['es']
 }
 
+def register_or_update_user(update: Update) -> int:
+    """Register or update user information and return user_id."""
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    return db.create_or_update_user(
+        chat_id=chat_id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        is_bot=user.is_bot,
+        language_code=user.language_code or 'es'
+    )
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /start command."""
+    # Register or update user
+    register_or_update_user(update)
+
     message = """
 🤖 ¡Hola! Soy tu bot de recordatorios personal.
 
@@ -64,6 +81,9 @@ También puedes escribir directamente:
 
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /recordar command."""
+    # Register or update user
+    register_or_update_user(update)
+
     if not context.args:
         await update.message.reply_text(
             "❌ Uso: /recordar <fecha/hora> <texto>\n"
@@ -441,6 +461,9 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle natural language messages."""
+    # Register or update user
+    register_or_update_user(update)
+
     text = update.message.text.lower()
 
     # Check if it's a reminder attempt
@@ -932,6 +955,9 @@ async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     """Handle voice messages and transcribe them."""
     if not update.message.voice:
         return
+
+    # Register or update user
+    register_or_update_user(update)
 
     # Show typing indicator while processing
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
