@@ -676,8 +676,12 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords = ['recordar', 'recordame', 'aviso', 'avisame', 'haceme acordar', 'acordar']
 
     # Check if it's a vault entry (bitácora)
-    vault_keywords = ['anotá', 'nota que', 'apuntar que', 'recordar que', 'acordarme que', 'guardar que']
-    if any(keyword in text for keyword in vault_keywords):
+    vault_keywords = ['anotá', 'anota', 'nota que', 'apuntar que', 'recordar que', 'acordarme que', 'guardar que']
+    # Also check normalized text for accent variations
+    normalized_text = normalize_text_for_search(text)
+    vault_keywords_normalized = [normalize_text_for_search(kw) for kw in vault_keywords]
+
+    if any(keyword in text for keyword in vault_keywords) or any(keyword in normalized_text for keyword in vault_keywords_normalized):
         # Remove vault keywords and save to vault
         clean_text = update.message.text
         for keyword in vault_keywords:
@@ -702,6 +706,7 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check for conversational questions about bitácora (e.g., "qué le gusta a Cindy?")
     elif '?' in text and any(word in text for word in ['que', 'quien', 'donde', 'cuando', 'como']):
+        chat_id = update.effective_chat.id
         # Extract search terms from conversational question
         search_terms = extract_conversational_search_terms(text)
 
@@ -727,9 +732,14 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🤔 No pude entender tu pregunta. Intenta ser más específico.")
         return
 
-    # Check if it's a bitácora search using "Averigua"
-    elif text.startswith('averigua'):
-        search_query = text[8:].strip()  # Remove "averigua" and clean
+    # Check if it's a bitácora search using "Averigua" (with or without accent)
+    elif text.startswith('averigua') or normalize_text_for_search(text).startswith('averigua'):
+        chat_id = update.effective_chat.id
+        # Handle both "averigua" and "averiguá"
+        if text.startswith('averigua'):
+            search_query = text[8:].strip()  # Remove "averigua" and clean
+        else:
+            search_query = text[9:].strip()  # Remove "averiguá" and clean
         if search_query:
             # Parse search query for category or text search
             search_term, is_category = parse_search_query(search_query)
