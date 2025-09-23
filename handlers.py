@@ -245,7 +245,16 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for reminder in reminders:
         # Show only time for today's reminders (not date)
         formatted_time = reminder['datetime'].strftime("%H:%M")
-        message += f"🔔 **#{reminder['id']}** - {formatted_time}\n"
+
+        # Show different emoji and text based on status
+        if reminder['status'] == 'sent':
+            status_emoji = "✅"
+            status_text = "(enviado)"
+        else:
+            status_emoji = "🔔"
+            status_text = ""
+
+        message += f"{status_emoji} **#{reminder['id']}** - {formatted_time} {status_text}\n"
         message += f"   {reminder['text']}\n\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')

@@ -39,7 +39,7 @@ Muestra todos los recordatorios pendientes ordenados por fecha.
 ```
 /hoy
 ```
-Muestra solo los recordatorios programados para el día actual.
+Muestra todos los recordatorios del día actual, tanto pendientes como ya enviados. Los enviados aparecen con ✅ (enviado).
 
 #### Ver recordatorios de una fecha específica
 ```

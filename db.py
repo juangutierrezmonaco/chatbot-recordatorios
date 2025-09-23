@@ -95,7 +95,7 @@ def get_active_reminders(chat_id: int) -> List[Dict]:
     return reminders
 
 def get_today_reminders(chat_id: int) -> List[Dict]:
-    """Get all active reminders for today for a chat."""
+    """Get all active and sent reminders for today for a chat."""
     import pytz
 
     # Get today's date range in Buenos Aires timezone
@@ -108,9 +108,9 @@ def get_today_reminders(chat_id: int) -> List[Dict]:
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, text, datetime
+        SELECT id, text, datetime, status
         FROM reminders
-        WHERE chat_id = ? AND status = 'active'
+        WHERE chat_id = ? AND status IN ('active', 'sent')
         AND datetime >= ? AND datetime <= ?
         ORDER BY datetime
     ''', (chat_id, today_start.isoformat(), today_end.isoformat()))
@@ -123,7 +123,8 @@ def get_today_reminders(chat_id: int) -> List[Dict]:
         reminders.append({
             'id': row[0],
             'text': row[1],
-            'datetime': datetime.fromisoformat(row[2])
+            'datetime': datetime.fromisoformat(row[2]),
+            'status': row[3]
         })
 
     return reminders
