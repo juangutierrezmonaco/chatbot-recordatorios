@@ -176,6 +176,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /borrarBitacora <id|todos> - Eliminar nota(s) de la bitácora
 /historialBitacora - Ver historial de entradas eliminadas
 /cancelar <id> - Cancelar recordatorio
+/importante [intervalo] <fecha/hora> <texto> - Recordatorio que se repite
+/completar <id> - Completar recordatorio importante
 /exportar [completo] - Exportar todos los datos a PDF
 
 **Ejemplos de comandos:**
@@ -186,6 +188,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `/semana todos` - Ver todos los recordatorios
 • `/exportar` - Exportar solo datos activos
 • `/exportar completo` - Exportar incluyendo historial
+• `/importante 10 mañana 9:00 ir al médico` (cada 10 min)
+• `/importante lunes 15:00 reunión` (cada 5 min por defecto)
+• `/completar 123` - Parar repetición del recordatorio #123
 • `/bitacora No me gustó el vino en Bar Central`
 • `/bitacora Si voy a La Parolaccia, pedir ravioles al pesto`
 
@@ -233,7 +238,16 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for reminder in reminders:
         formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
-        message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
+
+        # Use fire emoji for important reminders
+        if reminder.get('is_important', False):
+            emoji = "🔥"
+            repeat_info = f" (cada {reminder.get('repeat_interval', 5)}min)"
+        else:
+            emoji = "🔔"
+            repeat_info = ""
+
+        message += f"{emoji} **#{reminder['id']}** - {formatted_date}{repeat_info}\n"
         message += f"   {reminder['text']}\n\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')
@@ -1407,6 +1421,135 @@ def extract_date_and_text(text: str):
         remaining_text = "recordatorio"
 
     return parsed_date, remaining_text
+
+async def important_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /importante command for important repeating reminders."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Formato incorrecto.\n\n"
+            "**Ejemplos:**\n"
+            "• `/importante 10 mañana 9:00 ir al médico` (cada 10 min)\n"
+            "• `/importante 5 en 2h llamar a Juan` (cada 5 min)\n"
+            "• `/importante lunes 10:00 reunión` (cada 5 min por defecto)",
+            parse_mode='Markdown'
+        )
+        return
+
+    # Parse arguments
+    args = context.args
+    text = ' '.join(args)
+
+    # Check if first argument is a number (repeat interval)
+    repeat_interval = 5  # Default 5 minutes
+    start_index = 0
+
+    try:
+        # If first argument is a number, use it as repeat interval
+        if args[0].isdigit():
+            repeat_interval = int(args[0])
+            if repeat_interval < 1 or repeat_interval > 60:
+                await update.message.reply_text("❌ El intervalo debe ser entre 1 y 60 minutos.")
+                return
+            start_index = 1
+            text = ' '.join(args[1:])
+    except (ValueError, IndexError):
+        pass
+
+    if not text.strip():
+        await update.message.reply_text("❌ Debes especificar el texto del recordatorio.")
+        return
+
+    # Process the reminder like a normal one
+    await process_important_reminder(update, context, text, repeat_interval)
+
+async def process_important_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, repeat_interval: int):
+    """Process an important reminder with repetition."""
+    chat_id = update.effective_chat.id
+
+    try:
+        # Extract date and reminder text
+        parsed_date, remaining_text = extract_date_and_text(text)
+
+        if not parsed_date:
+            await update.message.reply_text(
+                "❌ No pude entender la fecha/hora. Intenta con:\n"
+                "• `mañana 9:00`\n"
+                "• `en 2 horas`\n"
+                "• `lunes 15:30`"
+            )
+            return
+
+        # Extract category if present
+        remaining_text, explicit_category = extract_explicit_category(remaining_text)
+
+        # Capitalize first letter
+        remaining_text = capitalize_first_letter(remaining_text)
+
+        # Use explicit category or extract from text
+        category = explicit_category if explicit_category else extract_category_from_text(remaining_text)
+
+        # Create important reminder in database
+        reminder_id = db.add_important_reminder(
+            chat_id=chat_id,
+            text=remaining_text,
+            datetime_obj=parsed_date,
+            category=category,
+            repeat_interval=repeat_interval
+        )
+
+        # Schedule the reminder
+        scheduler.schedule_important_reminder(reminder_id, parsed_date, repeat_interval, context.bot)
+
+        # Format response
+        formatted_time = parsed_date.strftime('%d/%m/%Y %H:%M')
+        await update.message.reply_text(
+            f"🔥 **Recordatorio importante creado:**\n"
+            f"📅 **Fecha:** {formatted_time}\n"
+            f"🔔 **Texto:** {remaining_text}\n"
+            f"⏰ **Se repetirá cada:** {repeat_interval} minutos\n"
+            f"🆔 **ID:** #{reminder_id}\n"
+            f"📂 **Categoría:** #{category}\n\n"
+            f"💡 Usa `/completar {reminder_id}` para detener la repetición.",
+            parse_mode='Markdown'
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing important reminder: {e}")
+        await update.message.reply_text("❌ Error procesando el recordatorio importante. Intenta nuevamente.")
+
+async def complete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /completar command to stop important reminder repetition."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Debes especificar el ID del recordatorio.\n\n"
+            "**Ejemplo:** `/completar 123`",
+            parse_mode='Markdown'
+        )
+        return
+
+    try:
+        reminder_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ El ID debe ser un número.")
+        return
+
+    # Mark as completed
+    success = db.complete_important_reminder(chat_id, reminder_id)
+
+    if success:
+        await update.message.reply_text(f"✅ Recordatorio importante #{reminder_id} completado. ¡No se repetirá más!")
+
+        # Cancel from scheduler
+        scheduler.cancel_reminder(reminder_id)
+    else:
+        await update.message.reply_text(f"❌ No se encontró un recordatorio importante activo con ID #{reminder_id}.")
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Export all user data to PDF."""

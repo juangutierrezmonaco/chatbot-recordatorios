@@ -74,7 +74,7 @@ def get_active_reminders(chat_id: int) -> List[Dict]:
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, text, datetime, category
+        SELECT id, text, datetime, category, is_important, repeat_interval
         FROM reminders
         WHERE chat_id = ? AND status = 'active'
         ORDER BY datetime
@@ -85,11 +85,20 @@ def get_active_reminders(chat_id: int) -> List[Dict]:
 
     reminders = []
     for row in rows:
+        # Parse datetime and ensure it has timezone info
+        dt = datetime.fromisoformat(row[2])
+        if dt.tzinfo is None:
+            # Assume Buenos Aires timezone for naive datetimes
+            import pytz
+            dt = pytz.timezone('America/Argentina/Buenos_Aires').localize(dt)
+
         reminders.append({
             'id': row[0],
             'text': row[1],
-            'datetime': datetime.fromisoformat(row[2]),
-            'category': row[3] if len(row) > 3 else 'general'
+            'datetime': dt,
+            'category': row[3] if len(row) > 3 and row[3] else 'general',
+            'is_important': bool(row[4]) if len(row) > 4 and row[4] is not None else False,
+            'repeat_interval': row[5] if len(row) > 5 and row[5] is not None else None
         })
 
     return reminders
@@ -930,3 +939,93 @@ def get_all_reminders_for_export(chat_id: int) -> List[Dict]:
 def get_all_vault_entries_for_export(chat_id: int) -> List[Dict]:
     """Get all vault entries for export (includes deleted ones)."""
     return get_all_user_vault_entries(chat_id, include_history=True)
+
+def add_important_reminder(chat_id: int, text: str, datetime_obj: datetime, category: str = None, repeat_interval: int = 5) -> int:
+    """Add an important reminder with repeat interval."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        INSERT INTO reminders (chat_id, text, datetime, category, is_important, repeat_interval, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (chat_id, text, datetime_obj.isoformat(), category or 'general', True, repeat_interval, datetime.now().isoformat()))
+
+    reminder_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Added important reminder {reminder_id} for chat {chat_id} with {repeat_interval}min interval")
+    return reminder_id
+
+def complete_important_reminder(chat_id: int, reminder_id: int) -> bool:
+    """Mark an important reminder as completed (stops repetition)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE reminders
+        SET status = 'completed'
+        WHERE id = ? AND chat_id = ? AND is_important = TRUE AND status = 'active'
+    ''', (reminder_id, chat_id))
+
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    if success:
+        logger.info(f"Completed important reminder {reminder_id} for chat {chat_id}")
+
+    return success
+
+def update_reminder_last_sent(reminder_id: int) -> bool:
+    """Update the last_sent timestamp for an important reminder."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE reminders
+        SET last_sent = ?
+        WHERE id = ? AND is_important = TRUE AND status = 'active'
+    ''', (datetime.now().isoformat(), reminder_id))
+
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    return success
+
+def get_active_important_reminders() -> List[Dict]:
+    """Get all active important reminders for scheduler processing."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, chat_id, text, datetime, repeat_interval, last_sent, category
+        FROM reminders
+        WHERE is_important = TRUE AND status = 'active'
+        ORDER BY datetime
+    ''')
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        reminder = {
+            'id': row[0],
+            'chat_id': row[1],
+            'text': row[2],
+            'datetime': datetime.fromisoformat(row[3]),
+            'repeat_interval': row[4],
+            'last_sent': datetime.fromisoformat(row[5]) if row[5] else None,
+            'category': row[6] or 'general'
+        }
+
+        # Ensure datetime has timezone info
+        if reminder['datetime'].tzinfo is None:
+            import pytz
+            reminder['datetime'] = pytz.timezone('America/Argentina/Buenos_Aires').localize(reminder['datetime'])
+
+        reminders.append(reminder)
+
+    return reminders

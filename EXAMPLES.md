@@ -96,6 +96,92 @@ Muestra los últimos 20 recordatorios que ya se enviaron o fueron cancelados.
 /cancelar todos
 ```
 
+## 🔥 Recordatorios Importantes (Con Repetición)
+
+Los recordatorios importantes se repiten automáticamente cada X minutos hasta que los marques como completados.
+
+### Crear Recordatorios Importantes
+
+#### Con intervalo personalizado
+```
+/importante 10 mañana 9:00 ir al médico
+```
+✅ **Resultado:** Se repite cada 10 minutos desde las 9:00 hasta completar
+
+```
+/importante 5 en 2h llamar a Juan urgente
+```
+✅ **Resultado:** Se repite cada 5 minutos desde dentro de 2 horas
+
+```
+/importante 15 lunes 15:00 reunión con el jefe
+```
+✅ **Resultado:** Se repite cada 15 minutos desde el lunes a las 15:00
+
+#### Con intervalo por defecto (5 minutos)
+```
+/importante mañana 8:00 tomar medicación
+```
+✅ **Resultado:** Se repite cada 5 minutos (intervalo por defecto)
+
+```
+/importante en 30m revisar el horno
+```
+✅ **Resultado:** Se repite cada 5 minutos desde dentro de 30 minutos
+
+### Completar Recordatorios Importantes
+
+#### Detener la repetición
+```
+/completar 123
+```
+✅ **Resultado:** El recordatorio #123 se marca como completado y **deja de repetirse**
+
+### Notificaciones de Recordatorios Importantes
+
+#### Formato especial
+```
+🔥 **RECORDATORIO IMPORTANTE** (#123):
+tomar medicación
+
+💡 Usa /completar 123 para detener la repetición.
+```
+
+#### En las listas aparecen así:
+```
+🔥 #123 - 25/09/2025 08:00 (cada 5min)
+   tomar medicación
+```
+
+### Casos de Uso Recomendados
+
+#### Medicación 💊
+```
+/importante 30 todos los días 8:00 tomar pastilla para la presión
+/importante 60 lunes miércoles viernes 20:00 vitamina D
+```
+
+#### Trabajo urgente 💼
+```
+/importante 10 hoy 14:00 llamar al cliente que está esperando respuesta
+/importante 15 mañana 9:00 enviar informe antes de la reunión
+```
+
+#### Eventos críticos ⚠️
+```
+/importante 5 en 45m sacar comida del horno
+/importante 10 en 2h salir para el aeropuerto
+```
+
+### Límites y Restricciones
+
+- **Intervalo mínimo:** 1 minuto
+- **Intervalo máximo:** 60 minutos
+- **Intervalo por defecto:** 5 minutos
+- Solo se pueden completar con `/completar <id>`
+- Sobreviven reinicios del bot
+- Se diferencian visualmente con 🔥
+
 ## 📔 Sistema de Bitácora (Notas Permanentes)
 
 ### Crear Entradas en la Bitácora
@@ -466,6 +552,104 @@ OPENAI_API_KEY=tu_api_key_openai      # Opcional, para mensajes de voz
 
 ### Sistema de Migraciones
 El bot incluye un sistema robusto de migraciones que actualiza automáticamente la estructura de la base de datos al iniciar.
+
+## 📄 Exportación de Datos a PDF
+
+Puedes exportar todos tus datos (recordatorios y bitácora) a un documento PDF profesional.
+
+### Comandos de Exportación
+
+#### Exportación básica (solo datos activos)
+```
+/exportar
+```
+✅ **Incluye:**
+- Recordatorios activos/pendientes
+- Entradas de bitácora activas
+- Resumen estadístico por categorías
+
+#### Exportación completa (con historial)
+```
+/exportar completo
+```
+✅ **Incluye todo lo anterior más:**
+- Recordatorios enviados y cancelados
+- Entradas de bitácora eliminadas
+- Historial completo de actividad
+
+### Contenido del PDF
+
+#### Secciones incluidas:
+1. **Header del usuario** - Nombre, username, fecha de exportación
+2. **Resumen estadístico** - Conteos por tipo y categoría
+3. **Recordatorios** - Organizados por estado (pendientes/enviados/cancelados)
+4. **Bitácora** - Agrupada por categoría con fechas
+
+#### Formato de exportación:
+```
+📋 Exportación de Datos - Bot de Recordatorios
+
+Usuario: Juan Pérez (@juangutierrez)
+Chat ID: 123456789
+Fecha de exportación: 23/09/2025 16:45:30
+Zona horaria: America/Argentina/Buenos_Aires
+
+📊 Resumen de Datos
+┌─────────────────┬───────┬─────────┬─────────────────────┐
+│ Tipo de Dato    │ Total │ Activos │ Completados/Elimin  │
+├─────────────────┼───────┼─────────┼─────────────────────┤
+│ Recordatorios   │   25  │    15   │          10         │
+│ Bitácora        │   50  │    45   │           5         │
+└─────────────────┴───────┴─────────┴─────────────────────┘
+
+🔔 Recordatorios Pendientes
+┌────┬──────────────┬───────────┬─────────────────────────┐
+│ ID │  Fecha/Hora  │ Categoría │         Texto           │
+├────┼──────────────┼───────────┼─────────────────────────┤
+│123 │25/09/25 15:30│  Trabajo  │ Reunión con cliente     │
+│124 │26/09/25 09:00│   Salud   │ Turno con el médico     │
+└────┴──────────────┴───────────┴─────────────────────────┘
+
+🔥 Recordatorios Importantes aparecen diferenciados
+```
+
+### Características del PDF
+
+#### Formato profesional:
+- ✅ **Texto completo** - Sin truncar contenido
+- ✅ **Tablas dinámicas** - Se ajustan al contenido
+- ✅ **Diferenciación visual** - Recordatorios importantes con 🔥
+- ✅ **Organización clara** - Por secciones y categorías
+- ✅ **Estadísticas** - Resumen cuantitativo de tu actividad
+
+#### Nombre del archivo:
+```
+exportacion_datos_123456789_20250923_164530.pdf
+```
+Format: `exportacion_datos_{chat_id}_{timestamp}.pdf`
+
+### Casos de Uso
+
+#### Backup personal 💾
+```
+/exportar completo
+```
+Generas un respaldo completo de todos tus datos para archivo personal.
+
+#### Reporte de actividad 📊
+```
+/exportar
+```
+Obtienes un resumen actual de tus recordatorios y notas activas.
+
+#### Migración de datos 🔄
+Si cambias de teléfono o chat, puedes exportar todo y tener un registro completo.
+
+### Limitaciones
+
+- **Generación bajo demanda** - No se guardan PDFs en el servidor
+- **Archivo temporal** - Se elimina automáticamente después del envío
+- **Tamaño de archivo** - Depende de la cantidad de datos (típicamente < 5MB)
 
 ---
 

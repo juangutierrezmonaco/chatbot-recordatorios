@@ -14,6 +14,7 @@ Este bot de Telegram permite a los usuarios crear recordatorios, mantener una bi
 - **pytz 2023.3** - Manejo de zonas horarias (Argentina/Buenos_Aires)
 - **python-dotenv 1.0.0** - Gestión de variables de entorno
 - **openai 1.3.0** - Transcripción de mensajes de voz (opcional)
+- **reportlab 4.0.5** - Generación de documentos PDF para exportación
 
 ### Tecnologías de Soporte
 - **unicodedata** (built-in) - Normalización de texto para búsquedas sin tildes
@@ -34,7 +35,9 @@ chatbot-recordatorios/
 │   ├── 1.sql            # Creación inicial de tablas
 │   ├── 2.sql            # Tabla de usuarios
 │   ├── 3.sql            # Sistema de categorías
-│   └── 4.sql            # Sistema de historial para bitácora
+│   ├── 4.sql            # Sistema de historial para bitácora
+│   └── 5.sql            # Recordatorios importantes con repetición
+├── pdf_exporter.py       # Generación de reportes PDF
 ├── reminders.db          # Base de datos SQLite
 ├── requirements.txt      # Dependencias Python
 ├── .env                  # Variables de entorno
@@ -52,9 +55,12 @@ CREATE TABLE reminders (
     chat_id INTEGER NOT NULL,           -- ID único del chat de Telegram
     text TEXT NOT NULL,                 -- Contenido del recordatorio
     datetime TEXT NOT NULL,             -- Fecha/hora en formato ISO
-    status TEXT DEFAULT 'active',       -- 'active', 'sent', 'cancelled'
+    status TEXT DEFAULT 'active',       -- 'active', 'sent', 'cancelled', 'completed'
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    category TEXT DEFAULT 'general'     -- Categoría automática o explícita
+    category TEXT DEFAULT 'general',    -- Categoría automática o explícita
+    is_important BOOLEAN DEFAULT FALSE, -- Recordatorio importante (se repite)
+    repeat_interval INTEGER DEFAULT NULL, -- Intervalo de repetición en minutos
+    last_sent TEXT DEFAULT NULL        -- Última vez que se envió (recordatorios importantes)
 );
 ```
 
@@ -62,6 +68,7 @@ CREATE TABLE reminders (
 - `idx_reminders_chat_id` - Búsqueda por usuario
 - `idx_reminders_status` - Filtrado por estado
 - `idx_reminders_category` - Búsqueda por categoría
+- `idx_reminders_important` - Búsqueda de recordatorios importantes
 
 ### Tabla: `vault` (Bitácora)
 Almacena notas permanentes de usuarios.
@@ -216,6 +223,64 @@ def schedule_reminder(bot: Bot, chat_id: int, reminder_id: int, text: str, datet
 - **Gestión de expirados**: Jobs pasados se marcan como 'sent' automáticamente
 - **Tolerancia a fallos**: `misfire_grace_time=60` para recuperación
 
+## 🔥 Recordatorios Importantes
+
+Los recordatorios importantes son una funcionalidad especial que permite crear recordatorios que se repiten automáticamente cada X minutos hasta que el usuario los marca como completados.
+
+### Características Técnicas
+
+#### Nuevos Campos en Base de Datos
+```sql
+-- Campos añadidos en migración 5.sql
+is_important BOOLEAN DEFAULT FALSE,     -- Marca el recordatorio como importante
+repeat_interval INTEGER DEFAULT NULL,  -- Intervalo de repetición en minutos (1-60)
+last_sent TEXT DEFAULT NULL           -- Timestamp de último envío
+```
+
+#### Comandos Implementados
+- `/importante [intervalo] <fecha/hora> <texto>` - Crear recordatorio repetitivo
+- `/completar <id>` - Detener repetición y marcar como completado
+
+### Arquitectura de Repetición
+
+#### Scheduler con IntervalTrigger
+```python
+# scheduler.py - Recordatorios importantes usan IntervalTrigger
+def schedule_important_reminder(reminder_id: int, datetime_obj: datetime, repeat_interval: int, bot: Bot):
+    scheduler.add_job(
+        send_important_reminder,
+        trigger=IntervalTrigger(
+            minutes=repeat_interval,
+            start_date=datetime_obj  # Inicia en la fecha programada
+        ),
+        args=[bot, chat_id, reminder_id, text, repeat_interval],
+        id=f"important_reminder_{reminder_id}"
+    )
+```
+
+#### Flujo de Recordatorios Importantes
+1. **Creación** → `/importante` parsea intervalo y programa repetición
+2. **Primer envío** → A la hora programada inicia la repetición
+3. **Repetición** → Cada X minutos hasta ser completado
+4. **Completado** → `/completar` cancela job y marca status='completed'
+5. **Persistencia** → `last_sent` actualizado en cada envío
+
+#### Diferenciación Visual
+- **En listas**: 🔥 #123 - fecha (cada 10min)
+- **En notificaciones**: 🔥 **RECORDATORIO IMPORTANTE** (#123)
+- **Comando de parada**: Incluído en cada notificación
+
+### Funciones de Base de Datos
+
+#### Específicas para Recordatorios Importantes
+```python
+# db.py - Funciones especializadas
+def add_important_reminder(chat_id, text, datetime_obj, category, repeat_interval) -> int
+def complete_important_reminder(chat_id, reminder_id) -> bool
+def update_reminder_last_sent(reminder_id) -> bool
+def get_active_important_reminders() -> List[Dict]
+```
+
 ## 🔍 Sistema de Búsqueda Avanzada
 
 ### Normalización de Texto
@@ -345,6 +410,109 @@ logging.basicConfig(
 - **Restart automático** del scheduler
 - **Reintento** en operaciones de BD
 - **Graceful degradation** en transcripción de voz
+
+## 📄 Exportación de Datos (PDF)
+
+El sistema incluye funcionalidad completa de exportación de datos de usuario a documentos PDF profesionales, permitiendo generar reportes comprensivos de recordatorios y bitácora.
+
+### Arquitectura de Exportación
+
+#### Componentes Principales
+```python
+# pdf_exporter.py - Clase principal
+class PDFExporter:
+    def __init__(self):
+        self.styles = getSampleStyleSheet()
+        self.setup_custom_styles()
+
+    def generate_export_pdf(self, chat_id, user_info, reminders, vault_entries, include_history=False)
+```
+
+#### Dependencia ReportLab
+- **reportlab 4.0.5** - Generación de PDFs con layouts profesionales
+- **Tablas dinámicas** - Contenido de recordatorios y bitácora sin truncar
+- **Estilos personalizados** - Fuentes, colores y espaciado optimizados
+- **Texto completo** - Uso de `Paragraph` para wrapping automático
+
+### Funcionalidades del PDF
+
+#### Secciones Incluidas
+1. **Header con información del usuario**
+   - Nombre, username, chat_id
+   - Fecha de exportación y zona horaria
+   - Metadata de la exportación
+
+2. **Resumen estadístico**
+   - Conteos por tipo de dato (recordatorios/bitácora)
+   - Distribución por categorías
+   - Estados (activo/enviado/eliminado)
+
+3. **Recordatorios detallados**
+   - Pendientes, enviados, cancelados (según parámetros)
+   - Formato: ID, fecha/hora, categoría, texto completo
+   - Diferenciación de recordatorios importantes
+
+4. **Bitácora personal**
+   - Entradas agrupadas por categoría
+   - Formato: ID, fecha, contenido completo
+   - Histórico de entradas eliminadas (opcional)
+
+#### Comandos de Exportación
+```bash
+/exportar              # Solo datos activos
+/exportar completo     # Incluye historial eliminado/enviado
+```
+
+### Flujo de Exportación
+
+#### Proceso Técnico
+```python
+# handlers.py - Comando de exportación
+async def export_command(update, context):
+    # 1. Obtener datos del usuario
+    user_info = db.get_user_info(chat_id)
+    reminders = db.get_all_reminders_for_export(chat_id)
+    vault_entries = db.get_all_vault_entries_for_export(chat_id)
+
+    # 2. Generar PDF
+    exporter = PDFExporter()
+    pdf_path = exporter.generate_export_pdf(...)
+
+    # 3. Enviar como documento de Telegram
+    await context.bot.send_document(chat_id=chat_id, document=pdf_file)
+
+    # 4. Limpiar archivo temporal
+    cleanup_temp_file(pdf_path)
+```
+
+#### Optimizaciones Implementadas
+- **Archivos temporales** - Generación segura con `tempfile.NamedTemporaryFile`
+- **Limpieza automática** - Eliminación de PDFs después del envío
+- **Nombres únicos** - `exportacion_datos_{chat_id}_{timestamp}.pdf`
+- **Gestión de memoria** - PDFs generados bajo demanda, no cacheados
+
+### Personalización Visual
+
+#### Estilos Personalizados
+```python
+# Configuración de estilos por sección
+title_style = ParagraphStyle('CustomTitle', fontSize=24, alignment=TA_CENTER)
+section_style = ParagraphStyle('SectionHeader', fontSize=16, textColor=colors.darkgreen)
+normal_style = ParagraphStyle('CustomNormal', fontSize=10)
+```
+
+#### Layouts de Tabla
+- **Recordatorios**: `[0.4", 1.1", 0.9", 4.6"]` - Optimizado para texto largo
+- **Bitácora**: `[0.4", 1", 5.6"]` - Máximo espacio para contenido
+- **Resumen**: `[2.5", 1.2", 1.3", 2"]` - Distribución balanceada
+
+#### Funciones de Base de Datos para Exportación
+```python
+# db.py - Funciones especializadas
+def get_all_reminders_for_export(chat_id: int) -> List[Dict]  # Todos los estados
+def get_all_vault_entries_for_export(chat_id: int) -> List[Dict]  # Incluye eliminados
+def get_user_info(chat_id: int) -> Dict  # Metadata del usuario
+```
 
 ## 🔒 Seguridad y Privacidad
 
