@@ -165,6 +165,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /recordar <fecha/hora> <texto> - Crear recordatorio
 /lista - Ver recordatorios activos
 /hoy - Ver recordatorios de hoy
+/semana - Ver recordatorios de esta semana
 /dia <fecha> - Ver recordatorios de fecha específica
 /buscar <palabra> - Buscar recordatorios
 /historial - Ver recordatorios pasados
@@ -256,6 +257,82 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         message += f"{status_emoji} **#{reminder['id']}** - {formatted_time} {status_text}\n"
         message += f"   {reminder['text']}\n\n"
+
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /semana command."""
+    chat_id = update.effective_chat.id
+    reminders = db.get_week_reminders(chat_id)
+
+    if not reminders:
+        await update.message.reply_text("📅 No tienes recordatorios para esta semana.")
+        return
+
+    # Group reminders by day
+    from collections import defaultdict
+    from datetime import datetime, timedelta
+    import pytz
+
+    timezone = pytz.timezone('America/Argentina/Buenos_Aires')
+    now = datetime.now(timezone)
+
+    # Create a dict to group reminders by day
+    days_reminders = defaultdict(list)
+
+    for reminder in reminders:
+        # Get the date (without time) as key
+        reminder_date = reminder['datetime'].date()
+        days_reminders[reminder_date].append(reminder)
+
+    # Spanish day names
+    day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+    message = "📅 **Tus recordatorios de esta semana:**\n\n"
+
+    # Get start of week (Monday)
+    days_since_monday = now.weekday()
+    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_monday)
+
+    # Iterate through each day of the week
+    for i in range(7):
+        current_day = week_start + timedelta(days=i)
+        current_date = current_day.date()
+        day_name = day_names[i]
+
+        # Format date
+        formatted_date = current_day.strftime("%d/%m")
+
+        # Check if it's today
+        if current_date == now.date():
+            day_header = f"**{day_name} {formatted_date} (HOY)**"
+        else:
+            day_header = f"**{day_name} {formatted_date}**"
+
+        # Get reminders for this day
+        day_reminders = days_reminders.get(current_date, [])
+
+        if day_reminders:
+            message += f"{day_header}\n"
+            for reminder in day_reminders:
+                formatted_time = reminder['datetime'].strftime("%H:%M")
+
+                # Show different emoji and text based on status
+                if reminder['status'] == 'sent':
+                    status_emoji = "✅"
+                    status_text = "(enviado)"
+                else:
+                    status_emoji = "🔔"
+                    status_text = ""
+
+                message += f"  {status_emoji} **#{reminder['id']}** - {formatted_time} {status_text}\n"
+                message += f"     {reminder['text']}\n"
+            message += "\n"
+        else:
+            # Only show empty days if they haven't passed yet or are today
+            if current_date >= now.date():
+                message += f"{day_header}\n"
+                message += f"  _Sin recordatorios_\n\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')
 

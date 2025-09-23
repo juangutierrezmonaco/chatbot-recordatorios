@@ -129,6 +129,47 @@ def get_today_reminders(chat_id: int) -> List[Dict]:
 
     return reminders
 
+def get_week_reminders(chat_id: int) -> List[Dict]:
+    """Get all active and sent reminders for the current week for a chat."""
+    import pytz
+    from datetime import timedelta
+
+    # Get this week's date range in Buenos Aires timezone
+    timezone = pytz.timezone('America/Argentina/Buenos_Aires')
+    now = datetime.now(timezone)
+
+    # Get start of week (Monday)
+    days_since_monday = now.weekday()
+    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_monday)
+
+    # Get end of week (Sunday)
+    week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, datetime, status
+        FROM reminders
+        WHERE chat_id = ? AND status IN ('active', 'sent')
+        AND datetime >= ? AND datetime <= ?
+        ORDER BY datetime
+    ''', (chat_id, week_start.isoformat(), week_end.isoformat()))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': datetime.fromisoformat(row[2]),
+            'status': row[3]
+        })
+
+    return reminders
+
 def search_reminders(chat_id: int, keyword: str) -> List[Dict]:
     """Search active reminders by keyword in text."""
     conn = sqlite3.connect(DB_PATH)

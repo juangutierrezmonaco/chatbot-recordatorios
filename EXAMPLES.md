@@ -41,6 +41,12 @@ Muestra todos los recordatorios pendientes ordenados por fecha.
 ```
 Muestra todos los recordatorios del día actual, tanto pendientes como ya enviados. Los enviados aparecen con ✅ (enviado).
 
+#### Ver recordatorios de la semana
+```
+/semana
+```
+Muestra todos los recordatorios de la semana actual (lunes a domingo) agrupados por día. Incluye tanto pendientes como enviados.
+
 #### Ver recordatorios de una fecha específica
 ```
 /dia 25/09/2025
