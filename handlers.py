@@ -744,19 +744,33 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Parse search query for category or text search
             search_term, is_category = parse_search_query(search_query)
 
+            # Always split search term to check for multiple terms
+            search_terms = search_term.split()
+
             if is_category:
                 entries = db.search_vault_by_category(chat_id, search_term)
                 search_type = "categoría"
+            elif len(search_terms) > 1:
+                # Use conversational search for multiple terms
+                normalized_terms = [normalize_text_for_search(term) for term in search_terms]
+                entries = db.search_vault_conversational(chat_id, normalized_terms)
+                search_type = f"términos: {', '.join(search_terms)}"
             else:
+                # Single term search
                 entries = db.search_vault_fuzzy(chat_id, search_term)
                 search_type = "texto"
 
             if not entries:
-                await update.message.reply_text(f"🔍 No encontré nada en tu bitácora con {search_type}: \"{search_term}\"")
+                if len(search_terms) > 1:
+                    await update.message.reply_text(f"🔍 No encontré nada en tu bitácora con {search_type}")
+                else:
+                    await update.message.reply_text(f"🔍 No encontré nada en tu bitácora con {search_type}: \"{search_term}\"")
                 return
 
             if is_category:
                 message = f"🔍 **Bitácora - Categoría \"{search_term}\":**\n\n"
+            elif len(search_terms) > 1:
+                message = f"🔍 **Bitácora - Búsqueda con {search_type}:**\n\n"
             else:
                 message = f"🔍 **Bitácora - Búsqueda \"{search_term}\":**\n\n"
 
@@ -766,10 +780,20 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Highlight the keyword in the text - only for text search
                 if is_category:
                     highlighted_text = entry['text']
+                    entry_emoji = "📝"
+                elif len(search_terms) > 1:
+                    # For multiple terms, show the text as-is (highlighting multiple terms is complex)
+                    highlighted_text = entry['text']
+                    # Use score emoji instead of default 📝 if available
+                    if 'score' in entry:
+                        entry_emoji = "🎯" if entry['score'] >= 2 else "📝"
+                    else:
+                        entry_emoji = "📝"
                 else:
                     highlighted_text = _highlight_keyword(entry['text'], search_term)
+                    entry_emoji = "📝"
 
-                message += f"📝 **#{entry['id']}** - {formatted_date}\n"
+                message += f"{entry_emoji} **#{entry['id']}** - {formatted_date}\n"
                 message += f"   {highlighted_text}\n\n"
 
             await update.message.reply_text(message, parse_mode='Markdown')
