@@ -2,6 +2,7 @@ import sqlite3
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional
+import unicodedata
 from migrations import MigrationManager
 
 logger = logging.getLogger(__name__)
@@ -414,6 +415,123 @@ def search_vault_entries(chat_id: int, keyword: str) -> List[Dict]:
         })
 
     return entries
+
+def normalize_text_for_search(text: str) -> str:
+    """Normalize text for search: remove accents, convert to lowercase."""
+    if not text:
+        return ""
+
+    # Remove accents/diacritics
+    normalized = unicodedata.normalize('NFD', text)
+    without_accents = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+
+    # Convert to lowercase
+    return without_accents.lower()
+
+def search_reminders_fuzzy(chat_id: int, keyword: str) -> List[Dict]:
+    """Search active reminders with fuzzy matching (accent-insensitive, partial matches)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Normalize the search keyword
+    normalized_keyword = normalize_text_for_search(keyword)
+
+    cursor.execute('''
+        SELECT id, text, datetime, category
+        FROM reminders
+        WHERE chat_id = ? AND status = 'active'
+        ORDER BY datetime
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Filter results using normalized text comparison
+    filtered_reminders = []
+    for row in rows:
+        normalized_text = normalize_text_for_search(row[1])  # row[1] is text
+        if normalized_keyword in normalized_text:
+            filtered_reminders.append({
+                'id': row[0],
+                'text': row[1],
+                'datetime': datetime.fromisoformat(row[2]),
+                'category': row[3] if len(row) > 3 else 'general'
+            })
+
+    return filtered_reminders
+
+def search_vault_fuzzy(chat_id: int, keyword: str) -> List[Dict]:
+    """Search vault entries with fuzzy matching (accent-insensitive, partial matches)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Normalize the search keyword
+    normalized_keyword = normalize_text_for_search(keyword)
+
+    cursor.execute('''
+        SELECT id, text, created_at, category
+        FROM vault
+        WHERE chat_id = ?
+        ORDER BY created_at DESC
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Filter results using normalized text comparison
+    filtered_entries = []
+    for row in rows:
+        normalized_text = normalize_text_for_search(row[1])  # row[1] is text
+        if normalized_keyword in normalized_text:
+            filtered_entries.append({
+                'id': row[0],
+                'text': row[1],
+                'created_at': datetime.fromisoformat(row[2]),
+                'category': row[3] if len(row) > 3 else 'general'
+            })
+
+    return filtered_entries
+
+def search_vault_conversational(chat_id: int, search_terms: List[str]) -> List[Dict]:
+    """Search vault entries using multiple terms with scoring (for conversational queries)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, created_at, category
+        FROM vault
+        WHERE chat_id = ?
+        ORDER BY created_at DESC
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Score and filter results
+    scored_entries = []
+    for row in rows:
+        normalized_text = normalize_text_for_search(row[1])
+        score = 0
+
+        # Count how many search terms appear in the text
+        for term in search_terms:
+            if term in normalized_text:
+                score += 1
+
+        # Only include entries that contain at least one term
+        if score > 0:
+            scored_entries.append({
+                'id': row[0],
+                'text': row[1],
+                'created_at': datetime.fromisoformat(row[2]),
+                'category': row[3] if len(row) > 3 else 'general',
+                'score': score
+            })
+
+    # Sort by score (highest first), then by date (newest first)
+    scored_entries.sort(key=lambda x: (-x['score'], -x['created_at'].timestamp()))
+
+    return scored_entries
 
 def search_reminders_by_category(chat_id: int, category: str) -> List[Dict]:
     """Search active reminders by category."""

@@ -112,25 +112,48 @@ Apuntar que el mecánico de la esquina es muy bueno
 ```
 Muestra todas las entradas guardadas en la bitácora, ordenadas por fecha.
 
+### Ver Entradas de la Bitácora
+```
+/listar bitacora
+/lista_bitacora (compatible)
+```
+Muestra todas las entradas guardadas en la bitácora, ordenadas por fecha.
+
 ### Buscar en la Bitácora
 
-#### Búsqueda por texto
+#### Con comando tradicional
 ```
-/buscar_bitacora vino
-/buscar_bitacora restaurante
-/buscar_bitacora "pedro me"
+/buscar bitacora vino
+/buscar_bitacora restaurante (compatible)
+/buscar bitacora "pedro me"
+```
+
+#### Con comando "Averigua" (lenguaje natural)
+```
+Averigua vino
+Averigua categoria:bares
+Averigua #entretenimiento
+```
+
+#### Búsquedas conversacionales (preguntas)
+```
+¿Qué le gusta a Cindy?
+¿Dónde come Pedro?
+¿Cindy sugus?
+¿Qué restaurante recomendó María?
 ```
 
 #### Búsqueda por categoría
 ```
-/buscar_bitacora categoria:bares
-/buscar_bitacora #entretenimiento
-/buscar_bitacora categoría:lugares
+/buscar bitacora categoria:bares
+/buscar bitacora #entretenimiento
+/buscar bitacora categoría:lugares
 ```
 
 ### Eliminar de la Bitácora
 ```
-/borrar_bitacora 3
+/borrar bitacora 3
+/borrar_bitacora 3 (compatible)
 ```
 Elimina la entrada #3 de tu bitácora.
 
@@ -257,6 +280,57 @@ El bot puede transcribir mensajes de voz automáticamente (requiere API key de O
 🎤 "Nota que Pedro me recomendó ver esa película"
 🎤 "Recordar que María hace excelentes empanadas"
 ```
+
+## 🔍 Búsquedas Avanzadas
+
+### Búsqueda Sin Tildes y Parcial
+
+El bot busca de forma inteligente, ignorando tildes y permitiendo coincidencias parciales:
+
+#### Ejemplos de búsqueda sin tildes:
+```
+Buscar "medico" encuentra → "Turno con el médico"
+Buscar "asi" encuentra → "Así me gusta"
+Buscar "facil" encuentra → "Es muy fácil de usar"
+```
+
+#### Ejemplos de búsqueda parcial:
+```
+Buscar "facu" encuentra → "Entregar trabajo en la facultad"
+Buscar "restau" encuentra → "El restaurante Don Carlos"
+Buscar "cumple" encuentra → "Cumpleaños de María"
+```
+
+### Búsquedas Conversacionales
+
+Puedes hacer preguntas naturales sobre tu bitácora:
+
+#### Formatos de preguntas:
+```
+¿Qué le gusta a [persona]?
+¿Dónde come [persona]?
+¿Cómo es [cosa]?
+¿Quién recomendó [lugar]?
+[Persona] [tema]
+```
+
+#### Ejemplos reales:
+```
+Pregunta: "¿Qué le gusta a Cindy?"
+Encuentra: "A Cindy le gustan los Sugus rosas y amarillos"
+
+Pregunta: "¿Dónde come Pedro?"
+Encuentra: "Pedro siempre va a La Parolaccia"
+
+Pregunta: "Cindy sugus"
+Encuentra: "A Cindy le gustan los Sugus rosas y amarillos"
+```
+
+#### Cómo funciona:
+- Extrae palabras clave importantes de tu pregunta
+- Busca en toda tu bitácora coincidencias
+- Ordena resultados por relevancia (más coincidencias = mejor puntaje)
+- Muestra los mejores 5 resultados con emojis 🎯 para alta relevancia
 
 ## 🔍 Funciones Avanzadas
 

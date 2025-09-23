@@ -1,7 +1,8 @@
 import re
 import logging
 from datetime import datetime, timedelta
-from typing import Tuple
+from typing import Tuple, List
+import unicodedata
 import pytz
 import dateparser
 from telegram import Update
@@ -39,6 +40,51 @@ def capitalize_first_letter(text: str) -> str:
     if not text:
         return text
     return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+
+def normalize_text_for_search(text: str) -> str:
+    """Normalize text for search: remove accents, convert to lowercase."""
+    if not text:
+        return ""
+
+    # Remove accents/diacritics
+    normalized = unicodedata.normalize('NFD', text)
+    without_accents = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+
+    # Convert to lowercase
+    return without_accents.lower()
+
+def extract_conversational_search_terms(text: str) -> List[str]:
+    """Extract search terms from conversational questions about people or topics.
+
+    Examples:
+    - "qué le gusta a Cindy?" → ["cindy", "gusta"]
+    - "Cindy sugus" → ["cindy", "sugus"]
+    - "dónde come Pedro?" → ["pedro", "come"]
+    """
+    # Normalize text for processing
+    normalized = normalize_text_for_search(text)
+
+    # Remove question words and common patterns
+    question_words = [
+        'que', 'quien', 'donde', 'cuando', 'como', 'por', 'para',
+        'le', 'les', 'me', 'te', 'se', 'nos', 'el', 'la', 'los', 'las',
+        'un', 'una', 'del', 'de', 'en', 'con', 'por', 'para', 'a',
+        'y', 'o', 'pero', 'si', 'no', 'mas', 'muy', 'tan', 'tanto'
+    ]
+
+    # Split into words and filter
+    words = normalized.split()
+    search_terms = []
+
+    for word in words:
+        # Remove punctuation
+        clean_word = re.sub(r'[^\w]', '', word)
+
+        # Skip if empty, too short, or is a question word
+        if len(clean_word) >= 3 and clean_word not in question_words:
+            search_terms.append(clean_word)
+
+    return search_terms
 
 def extract_explicit_category(text: str) -> Tuple[str, str]:
     """Extract explicit category from text pattern like '(categoría: trabajo)' or '(categoria: trabajo)'.
@@ -118,9 +164,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /buscar <palabra> - Buscar recordatorios
 /historial - Ver recordatorios pasados
 /bitacora <texto> - Guardar nota en la bitácora
-/lista_bitacora - Ver todas las notas de la bitácora
-/buscar_bitacora <palabra> - Buscar en la bitácora
-/borrar_bitacora <id> - Eliminar nota de la bitácora
+/listar bitacora - Ver todas las notas de la bitácora
+/buscar bitacora <palabra> - Buscar en la bitácora
+/borrar bitacora <id> - Eliminar nota de la bitácora
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
@@ -247,7 +293,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reminders = db.search_reminders_by_category(chat_id, search_term)
         search_type = "categoría"
     else:
-        reminders = db.search_reminders(chat_id, search_term)
+        reminders = db.search_reminders_fuzzy(chat_id, search_term)
         search_type = "palabra"
 
     if not reminders:
@@ -422,7 +468,7 @@ async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{text}\" [#{category}]")
 
 async def vault_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /lista_bitacora command."""
+    """Handle the /listar bitacora command."""
     chat_id = update.effective_chat.id
     entries = db.get_vault_entries(chat_id)
 
@@ -441,14 +487,14 @@ async def vault_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /buscar_bitacora command."""
+    """Handle the /buscar bitacora command."""
     if not context.args:
         await update.message.reply_text(
-            "❌ Uso: /buscar_bitacora <palabra>\n"
+            "❌ Uso: /buscar bitacora <palabra>\n"
             "Ejemplos:\n"
-            "• /buscar_bitacora vino\n"
-            "• /buscar_bitacora categoria:bares\n"
-            "• /buscar_bitacora #entretenimiento"
+            "• /buscar bitacora vino\n"
+            "• /buscar bitacora categoria:bares\n"
+            "• /buscar bitacora #entretenimiento"
         )
         return
 
@@ -470,7 +516,7 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
         entries = db.search_vault_by_category(chat_id, search_term)
         search_type = "categoría"
     else:
-        entries = db.search_vault_entries(chat_id, search_term)
+        entries = db.search_vault_fuzzy(chat_id, search_term)
         search_type = "palabra"
 
     if not entries:
@@ -497,11 +543,11 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def vault_delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /borrar_bitacora command."""
+    """Handle the /borrar bitacora command."""
     if not context.args:
         await update.message.reply_text(
-            "❌ Uso: /borrar_bitacora <id>\n"
-            "Ejemplo: /borrar_bitacora 5"
+            "❌ Uso: /borrar bitacora <id>\n"
+            "Ejemplo: /borrar bitacora 5"
         )
         return
 
@@ -618,6 +664,113 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{clean_text}\" [#{category}]")
         else:
             await update.message.reply_text("❌ El texto de la bitácora no puede estar vacío.")
+        return
+
+    # Check for conversational questions about bitácora (e.g., "qué le gusta a Cindy?")
+    elif '?' in text and any(word in text for word in ['que', 'quien', 'donde', 'cuando', 'como']):
+        # Extract search terms from conversational question
+        search_terms = extract_conversational_search_terms(text)
+
+        if search_terms:
+            entries = db.search_vault_conversational(chat_id, search_terms)
+
+            if not entries:
+                terms_str = ", ".join(search_terms)
+                await update.message.reply_text(f"🤔 No encontré información sobre: {terms_str}")
+                return
+
+            message = f"🔍 **Esto es lo que sé sobre tu consulta:**\n\n"
+
+            for entry in entries[:5]:  # Limit to top 5 results
+                formatted_date = entry['created_at'].strftime("%d/%m/%Y")
+                score_emoji = "🎯" if entry['score'] >= 2 else "📝"
+
+                message += f"{score_emoji} **#{entry['id']}** - {formatted_date}\n"
+                message += f"   {entry['text']}\n\n"
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text("🤔 No pude entender tu pregunta. Intenta ser más específico.")
+        return
+
+    # Check if it's a bitácora search using "Averigua"
+    elif text.startswith('averigua'):
+        search_query = text[8:].strip()  # Remove "averigua" and clean
+        if search_query:
+            # Parse search query for category or text search
+            search_term, is_category = parse_search_query(search_query)
+
+            if is_category:
+                entries = db.search_vault_by_category(chat_id, search_term)
+                search_type = "categoría"
+            else:
+                entries = db.search_vault_fuzzy(chat_id, search_term)
+                search_type = "texto"
+
+            if not entries:
+                await update.message.reply_text(f"🔍 No encontré nada en tu bitácora con {search_type}: \"{search_term}\"")
+                return
+
+            if is_category:
+                message = f"🔍 **Bitácora - Categoría \"{search_term}\":**\n\n"
+            else:
+                message = f"🔍 **Bitácora - Búsqueda \"{search_term}\":**\n\n"
+
+            for entry in entries:
+                formatted_date = entry['created_at'].strftime("%d/%m/%Y")
+
+                # Highlight the keyword in the text - only for text search
+                if is_category:
+                    highlighted_text = entry['text']
+                else:
+                    highlighted_text = _highlight_keyword(entry['text'], search_term)
+
+                message += f"📝 **#{entry['id']}** - {formatted_date}\n"
+                message += f"   {highlighted_text}\n\n"
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(
+                "❌ Especifica qué averiguar.\n"
+                "Ejemplos:\n"
+                "• Averigua vino\n"
+                "• Averigua categoria:bares\n"
+                "• Averigua #entretenimiento"
+            )
+        return
+
+    # Check for friendly command patterns
+    elif text.startswith('/listar bitacora') or text.startswith('/listar bitácora'):
+        await vault_list_command(update, context)
+        return
+
+    elif text.startswith('/buscar bitacora') or text.startswith('/buscar bitácora'):
+        # Extract search term after "buscar bitacora "
+        search_part = text.replace('/buscar bitacora', '').replace('/buscar bitácora', '').strip()
+        if search_part:
+            # Simulate context.args for the existing function
+            class FakeContext:
+                def __init__(self, args):
+                    self.args = args.split()
+            fake_context = FakeContext(search_part)
+            update_copy = update
+            await vault_search_command(update_copy, fake_context)
+        else:
+            await vault_search_command(update, context)
+        return
+
+    elif text.startswith('/borrar bitacora') or text.startswith('/borrar bitácora'):
+        # Extract ID after "borrar bitacora "
+        id_part = text.replace('/borrar bitacora', '').replace('/borrar bitácora', '').strip()
+        if id_part:
+            # Simulate context.args for the existing function
+            class FakeContext:
+                def __init__(self, args):
+                    self.args = args.split()
+            fake_context = FakeContext(id_part)
+            await vault_delete_command(update, fake_context)
+        else:
+            await vault_delete_command(update, context)
         return
 
     # Check if it's a reminder
