@@ -56,6 +56,10 @@ def main():
         application.add_handler(CommandHandler("lista_bitacora", handlers.vault_list_command))
         application.add_handler(CommandHandler("buscar_bitacora", handlers.vault_search_command))
         application.add_handler(CommandHandler("borrar_bitacora", handlers.vault_delete_command))
+        # camelCase commands for mobile friendliness
+        application.add_handler(CommandHandler("listarBitacora", handlers.vault_list_command))
+        application.add_handler(CommandHandler("buscarBitacora", handlers.vault_search_command))
+        application.add_handler(CommandHandler("borrarBitacora", handlers.vault_delete_command))
         application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
 
         # Handler for voice messages

@@ -739,38 +739,6 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # Check for camelCase command patterns
-    elif text.startswith('/listarBitacora'):
-        await vault_list_command(update, context)
-        return
-
-    elif text.startswith('/buscarBitacora'):
-        # Extract search term after "buscarBitacora "
-        search_part = text.replace('/buscarBitacora', '').strip()
-        if search_part:
-            # Simulate context.args for the existing function
-            class FakeContext:
-                def __init__(self, args):
-                    self.args = args.split()
-            fake_context = FakeContext(search_part)
-            await vault_search_command(update, fake_context)
-        else:
-            await vault_search_command(update, context)
-        return
-
-    elif text.startswith('/borrarBitacora'):
-        # Extract ID after "borrarBitacora "
-        id_part = text.replace('/borrarBitacora', '').strip()
-        if id_part:
-            # Simulate context.args for the existing function
-            class FakeContext:
-                def __init__(self, args):
-                    self.args = args.split()
-            fake_context = FakeContext(id_part)
-            await vault_delete_command(update, fake_context)
-        else:
-            await vault_delete_command(update, context)
-        return
 
     # Check if it's a reminder
     elif any(keyword in text for keyword in keywords):
