@@ -1,6 +1,7 @@
 import re
 import logging
 from datetime import datetime, timedelta
+from typing import Tuple
 import pytz
 import dateparser
 from telegram import Update
@@ -32,6 +33,29 @@ def register_or_update_user(update: Update) -> int:
         is_bot=user.is_bot,
         language_code=user.language_code or 'es'
     )
+
+def capitalize_first_letter(text: str) -> str:
+    """Capitalize the first letter of a text while preserving the rest."""
+    if not text:
+        return text
+    return text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+
+def extract_explicit_category(text: str) -> Tuple[str, str]:
+    """Extract explicit category from text pattern like '(categoría: trabajo)' or '(categoria: trabajo)'.
+
+    Returns:
+        tuple: (cleaned_text, category) - text without the category pattern and the extracted category
+    """
+    # Pattern to match (categoría: X) or (categoria: X) - case insensitive
+    pattern = r'\s*\(\s*categor[ií]a\s*:\s*([^)]+)\s*\)\s*$'
+
+    match = re.search(pattern, text, re.IGNORECASE)
+    if match:
+        category = match.group(1).strip().lower()
+        cleaned_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+        return cleaned_text, category
+
+    return text, None
 
 def extract_category_from_text(text: str) -> str:
     """Extract category from text based on keywords."""
@@ -174,6 +198,24 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(message, parse_mode='Markdown')
 
+def parse_search_query(query: str) -> Tuple[str, bool]:
+    """Parse search query to detect category search.
+
+    Returns:
+        tuple: (search_term, is_category_search)
+    """
+    # Check for category: pattern
+    if query.startswith('categoria:') or query.startswith('categoría:'):
+        category = query.split(':', 1)[1].strip()
+        return category, True
+
+    # Check for #category pattern
+    if query.startswith('#'):
+        category = query[1:].strip()
+        return category, True
+
+    return query, False
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /buscar command."""
     if not context.args:
@@ -181,6 +223,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Uso: /buscar <palabra o frase>\n"
             "Ejemplos:\n"
             "• /buscar comida\n"
+            "• /buscar categoria:trabajo\n"
+            "• /buscar #salud\n"
             "• /buscar \"reunión trabajo\""
         )
         return
@@ -196,19 +240,33 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ La búsqueda no puede estar vacía.")
         return
 
-    reminders = db.search_reminders(chat_id, keyword)
+    # Parse search query
+    search_term, is_category = parse_search_query(keyword)
+
+    if is_category:
+        reminders = db.search_reminders_by_category(chat_id, search_term)
+        search_type = "categoría"
+    else:
+        reminders = db.search_reminders(chat_id, search_term)
+        search_type = "palabra"
 
     if not reminders:
-        await update.message.reply_text(f"🔍 No se encontraron recordatorios con: \"{keyword}\"")
+        await update.message.reply_text(f"🔍 No se encontraron recordatorios con {search_type}: \"{search_term}\"")
         return
 
-    message = f"🔍 **Recordatorios encontrados con \"{keyword}\":**\n\n"
+    if is_category:
+        message = f"🔍 **Recordatorios de categoría \"{search_term}\":**\n\n"
+    else:
+        message = f"🔍 **Recordatorios encontrados con \"{search_term}\":**\n\n"
 
     for reminder in reminders:
         formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
 
-        # Highlight the keyword in the text (simple bold formatting)
-        highlighted_text = _highlight_keyword(reminder['text'], keyword)
+        # Highlight the keyword in the text (simple bold formatting) - only for text search
+        if is_category:
+            highlighted_text = reminder['text']
+        else:
+            highlighted_text = _highlight_keyword(reminder['text'], search_term)
 
         message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
         message += f"   {highlighted_text}\n\n"
@@ -352,7 +410,14 @@ async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ El texto de la bitácora no puede estar vacío.")
         return
 
-    category = extract_category_from_text(text)
+    # Extract explicit category if present
+    text, explicit_category = extract_explicit_category(text)
+
+    # Capitalize first letter
+    text = capitalize_first_letter(text)
+
+    # Use explicit category or extract from text
+    category = explicit_category if explicit_category else extract_category_from_text(text)
     vault_id = db.add_vault_entry(chat_id, text, category)
     await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{text}\" [#{category}]")
 
@@ -380,7 +445,10 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if not context.args:
         await update.message.reply_text(
             "❌ Uso: /buscar_bitacora <palabra>\n"
-            "Ejemplo: /buscar_bitacora vino"
+            "Ejemplos:\n"
+            "• /buscar_bitacora vino\n"
+            "• /buscar_bitacora categoria:bares\n"
+            "• /buscar_bitacora #entretenimiento"
         )
         return
 
@@ -395,19 +463,33 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❌ La búsqueda no puede estar vacía.")
         return
 
-    entries = db.search_vault_entries(chat_id, keyword)
+    # Parse search query
+    search_term, is_category = parse_search_query(keyword)
+
+    if is_category:
+        entries = db.search_vault_by_category(chat_id, search_term)
+        search_type = "categoría"
+    else:
+        entries = db.search_vault_entries(chat_id, search_term)
+        search_type = "palabra"
 
     if not entries:
-        await update.message.reply_text(f"🔍 No se encontraron entradas en la bitácora con: \"{keyword}\"")
+        await update.message.reply_text(f"🔍 No se encontraron entradas en la bitácora con {search_type}: \"{search_term}\"")
         return
 
-    message = f"🔍 **Bitácora - Entradas encontradas con \"{keyword}\":**\n\n"
+    if is_category:
+        message = f"🔍 **Bitácora - Categoría \"{search_term}\":**\n\n"
+    else:
+        message = f"🔍 **Bitácora - Entradas encontradas con \"{search_term}\":**\n\n"
 
     for entry in entries:
         formatted_date = entry['created_at'].strftime("%d/%m/%Y")
 
-        # Highlight the keyword in the text
-        highlighted_text = _highlight_keyword(entry['text'], keyword)
+        # Highlight the keyword in the text - only for text search
+        if is_category:
+            highlighted_text = entry['text']
+        else:
+            highlighted_text = _highlight_keyword(entry['text'], search_term)
 
         message += f"📝 **#{entry['id']}** - {formatted_date}\n"
         message += f"   {highlighted_text}\n\n"
@@ -513,7 +595,33 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if it's a reminder attempt
     keywords = ['recordar', 'recordame', 'aviso', 'avisame', 'haceme acordar', 'acordar']
 
-    if any(keyword in text for keyword in keywords):
+    # Check if it's a vault entry (bitácora)
+    vault_keywords = ['anotá', 'nota que', 'apuntar que', 'recordar que', 'acordarme que', 'guardar que']
+    if any(keyword in text for keyword in vault_keywords):
+        # Remove vault keywords and save to vault
+        clean_text = update.message.text
+        for keyword in vault_keywords:
+            clean_text = re.sub(rf'\b{keyword}\b', '', clean_text, flags=re.IGNORECASE)
+        clean_text = clean_text.strip()
+
+        if clean_text:
+            # Extract explicit category if present
+            clean_text, explicit_category = extract_explicit_category(clean_text)
+
+            # Capitalize first letter
+            clean_text = capitalize_first_letter(clean_text)
+            chat_id = update.effective_chat.id
+
+            # Use explicit category or extract from text
+            category = explicit_category if explicit_category else extract_category_from_text(clean_text)
+            vault_id = db.add_vault_entry(chat_id, clean_text, category)
+            await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{clean_text}\" [#{category}]")
+        else:
+            await update.message.reply_text("❌ El texto de la bitácora no puede estar vacío.")
+        return
+
+    # Check if it's a reminder
+    elif any(keyword in text for keyword in keywords):
         await process_reminder(update, context, update.message.text)
     else:
         await update.message.reply_text(
@@ -540,14 +648,20 @@ async def process_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         await update.message.reply_text("❌ Falta el texto del recordatorio.")
         return
 
+    # Extract explicit category if present
+    reminder_text, explicit_category = extract_explicit_category(reminder_text)
+
+    # Capitalize first letter
+    reminder_text = capitalize_first_letter(reminder_text)
+
     # Verify that the date is in the future
     now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
     if datetime_obj <= now:
         await update.message.reply_text("❌ La fecha debe ser en el futuro.")
         return
 
-    # Extract category and save to DB
-    category = extract_category_from_text(reminder_text)
+    # Use explicit category or extract from text
+    category = explicit_category if explicit_category else extract_category_from_text(reminder_text)
     reminder_id = db.add_reminder(chat_id, reminder_text, datetime_obj, category)
     scheduler.schedule_reminder(
         context.bot, chat_id, reminder_id, reminder_text, datetime_obj
@@ -1028,7 +1142,7 @@ async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
         text_lower = transcribed_text.lower()
 
         # Check if it's a vault entry (keywords that suggest it's a note)
-        vault_keywords = ['recordar que', 'acordarme que', 'nota que', 'apuntar que', 'guardar que']
+        vault_keywords = ['recordar que', 'acordarme que', 'nota que', 'apuntar que', 'guardar que', 'anotá']
         if any(keyword in text_lower for keyword in vault_keywords):
             # Remove vault keywords and save to vault
             clean_text = transcribed_text
@@ -1037,8 +1151,15 @@ async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             clean_text = clean_text.strip()
 
             if clean_text:
+                # Extract explicit category if present
+                clean_text, explicit_category = extract_explicit_category(clean_text)
+
+                # Capitalize first letter
+                clean_text = capitalize_first_letter(clean_text)
                 chat_id = update.effective_chat.id
-                category = extract_category_from_text(clean_text)
+
+                # Use explicit category or extract from text
+                category = explicit_category if explicit_category else extract_category_from_text(clean_text)
                 vault_id = db.add_vault_entry(chat_id, clean_text, category)
                 await update.message.reply_text(f"📖 Guardado en la bitácora (#{vault_id}): \"{clean_text}\" [#{category}]")
             return

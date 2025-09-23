@@ -415,6 +415,58 @@ def search_vault_entries(chat_id: int, keyword: str) -> List[Dict]:
 
     return entries
 
+def search_reminders_by_category(chat_id: int, category: str) -> List[Dict]:
+    """Search active reminders by category."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, datetime, category
+        FROM reminders
+        WHERE chat_id = ? AND status = 'active' AND LOWER(category) = ?
+        ORDER BY datetime
+    ''', (chat_id, category.lower()))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': datetime.fromisoformat(row[2]),
+            'category': row[3] if len(row) > 3 else 'general'
+        })
+
+    return reminders
+
+def search_vault_by_category(chat_id: int, category: str) -> List[Dict]:
+    """Search vault entries by category."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, created_at, category
+        FROM vault
+        WHERE chat_id = ? AND LOWER(category) = ?
+        ORDER BY created_at DESC
+    ''', (chat_id, category.lower()))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    entries = []
+    for row in rows:
+        entries.append({
+            'id': row[0],
+            'text': row[1],
+            'created_at': datetime.fromisoformat(row[2]),
+            'category': row[3] if len(row) > 3 else 'general'
+        })
+
+    return entries
+
 def delete_vault_entry(chat_id: int, vault_id: int) -> bool:
     """Delete a vault entry."""
     conn = sqlite3.connect(DB_PATH)
