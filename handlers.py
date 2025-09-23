@@ -166,7 +166,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /bitacora <texto> - Guardar nota en la bitácora
 /listarBitacora - Ver todas las notas de la bitácora
 /buscarBitacora <palabra> - Buscar en la bitácora
-/borrarBitacora <id> - Eliminar nota de la bitácora
+/borrarBitacora <id|todos> - Eliminar nota(s) de la bitácora
+/historialBitacora - Ver historial de entradas eliminadas
 /cancelar <id> - Cancelar recordatorio
 
 **Ejemplos de comandos:**
@@ -440,6 +441,27 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message += f"_(Mostrando últimos {len(reminders)} recordatorios)_"
     await update.message.reply_text(message, parse_mode='Markdown')
 
+async def vault_history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /historialBitacora command."""
+    chat_id = update.effective_chat.id
+    entries = db.get_vault_history(chat_id)
+
+    if not entries:
+        await update.message.reply_text("📖 No hay entradas eliminadas en el historial de la bitácora")
+        return
+
+    message = f"🗂️ **Historial de bitácora (eliminadas):**\n\n"
+
+    for entry in entries:
+        created_date = entry['created_at'].strftime("%d/%m/%Y")
+        deleted_date = entry['deleted_at'].strftime("%d/%m/%Y") if entry['deleted_at'] else "N/A"
+
+        message += f"🗑️ **#{entry['id']}** - Creada: {created_date} | Eliminada: {deleted_date} [#{entry['category']}]\n"
+        message += f"   {entry['text']}\n\n"
+
+    message += f"_(Mostrando últimas {len(entries)} entradas eliminadas)_"
+    await update.message.reply_text(message, parse_mode='Markdown')
+
 async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /bitacora command."""
     if not context.args:
@@ -543,21 +565,33 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(message, parse_mode='Markdown')
 
 async def vault_delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /borrar bitacora command."""
+    """Handle the /borrarBitacora command."""
     if not context.args:
         await update.message.reply_text(
-            "❌ Uso: /borrar bitacora <id>\n"
-            "Ejemplo: /borrar bitacora 5"
+            "❌ Uso: /borrarBitacora <id|todos>\n"
+            "Ejemplos:\n"
+            "• /borrarBitacora 5\n"
+            "• /borrarBitacora todos"
         )
+        return
+
+    chat_id = update.effective_chat.id
+    arg = context.args[0].lower()
+
+    if arg == "todos":
+        # Delete all vault entries
+        deleted_count = db.delete_all_vault_entries(chat_id)
+        if deleted_count > 0:
+            await update.message.reply_text(f"🗑️ Se eliminaron {deleted_count} entradas de la bitácora")
+        else:
+            await update.message.reply_text("📖 Tu bitácora ya estaba vacía")
         return
 
     try:
         vault_id = int(context.args[0])
     except ValueError:
-        await update.message.reply_text("❌ El ID debe ser un número.")
+        await update.message.reply_text("❌ El ID debe ser un número o 'todos'.")
         return
-
-    chat_id = update.effective_chat.id
 
     if db.delete_vault_entry(chat_id, vault_id):
         await update.message.reply_text(f"🗑️ Entrada #{vault_id} eliminada de la bitácora")

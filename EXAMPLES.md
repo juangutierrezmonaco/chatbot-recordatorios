@@ -151,11 +151,25 @@ Averigua #entretenimiento
 ```
 
 ### Eliminar de la Bitácora
+
+#### Eliminar una entrada específica
 ```
 /borrarBitacora 3
 /borrar_bitacora 3 (compatible)
 ```
 Elimina la entrada #3 de tu bitácora.
+
+#### Eliminar todas las entradas
+```
+/borrarBitacora todos
+```
+Elimina todas las entradas activas de tu bitácora.
+
+### Historial de la Bitácora
+```
+/historialBitacora
+```
+Muestra las últimas 20 entradas eliminadas de la bitácora con fechas de creación y eliminación.
 
 ## 🏷️ Sistema de Categorías
 

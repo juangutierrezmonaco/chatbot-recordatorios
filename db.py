@@ -369,14 +369,14 @@ def add_vault_entry(chat_id: int, text: str, category: str = 'general') -> int:
     return vault_id
 
 def get_vault_entries(chat_id: int) -> List[Dict]:
-    """Get all vault entries for a chat."""
+    """Get all active vault entries for a chat."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
         SELECT id, text, created_at, category
         FROM vault
-        WHERE chat_id = ?
+        WHERE chat_id = ? AND (status IS NULL OR status = 'active')
         ORDER BY created_at DESC
     ''', (chat_id,))
 
@@ -405,7 +405,7 @@ def search_vault_entries(chat_id: int, keyword: str) -> List[Dict]:
     cursor.execute('''
         SELECT id, text, created_at, category
         FROM vault
-        WHERE chat_id = ? AND LOWER(text) LIKE ?
+        WHERE chat_id = ? AND LOWER(text) LIKE ? AND (status IS NULL OR status = 'active')
         ORDER BY created_at DESC
     ''', (chat_id, search_pattern))
 
@@ -478,7 +478,7 @@ def search_vault_fuzzy(chat_id: int, keyword: str) -> List[Dict]:
     cursor.execute('''
         SELECT id, text, created_at, category
         FROM vault
-        WHERE chat_id = ?
+        WHERE chat_id = ? AND (status IS NULL OR status = 'active')
         ORDER BY created_at DESC
     ''', (chat_id,))
 
@@ -507,7 +507,7 @@ def search_vault_conversational(chat_id: int, search_terms: List[str]) -> List[D
     cursor.execute('''
         SELECT id, text, created_at, category
         FROM vault
-        WHERE chat_id = ?
+        WHERE chat_id = ? AND (status IS NULL OR status = 'active')
         ORDER BY created_at DESC
     ''', (chat_id,))
 
@@ -574,7 +574,7 @@ def search_vault_by_category(chat_id: int, category: str) -> List[Dict]:
     cursor.execute('''
         SELECT id, text, created_at, category
         FROM vault
-        WHERE chat_id = ? AND LOWER(category) = ?
+        WHERE chat_id = ? AND LOWER(category) = ? AND (status IS NULL OR status = 'active')
         ORDER BY created_at DESC
     ''', (chat_id, category.lower()))
 
@@ -593,13 +593,14 @@ def search_vault_by_category(chat_id: int, category: str) -> List[Dict]:
     return entries
 
 def delete_vault_entry(chat_id: int, vault_id: int) -> bool:
-    """Delete a vault entry."""
+    """Mark a vault entry as deleted (soft delete)."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        DELETE FROM vault
-        WHERE id = ? AND chat_id = ?
+        UPDATE vault
+        SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND chat_id = ? AND status = 'active'
     ''', (vault_id, chat_id))
 
     affected_rows = cursor.rowcount
@@ -607,7 +608,7 @@ def delete_vault_entry(chat_id: int, vault_id: int) -> bool:
     conn.close()
 
     if affected_rows > 0:
-        logger.info(f"Vault entry {vault_id} deleted")
+        logger.info(f"Vault entry {vault_id} marked as deleted")
         return True
     else:
         logger.warning(f"Could not delete vault entry {vault_id}")
@@ -719,3 +720,49 @@ def get_all_users() -> List[Dict]:
         })
 
     return users
+
+def delete_all_vault_entries(chat_id: int) -> int:
+    """Mark all active vault entries as deleted (soft delete all)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE vault
+        SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP
+        WHERE chat_id = ? AND status = 'active'
+    ''', (chat_id,))
+
+    affected_rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Marked {affected_rows} vault entries as deleted for chat {chat_id}")
+    return affected_rows
+
+def get_vault_history(chat_id: int) -> List[Dict]:
+    """Get deleted vault entries (history)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, created_at, deleted_at, category
+        FROM vault
+        WHERE chat_id = ? AND status = 'deleted'
+        ORDER BY deleted_at DESC
+        LIMIT 20
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    entries = []
+    for row in rows:
+        entries.append({
+            'id': row[0],
+            'text': row[1],
+            'created_at': datetime.fromisoformat(row[2]),
+            'deleted_at': datetime.fromisoformat(row[3]) if row[3] else None,
+            'category': row[4] if len(row) > 4 else 'general'
+        })
+
+    return entries
