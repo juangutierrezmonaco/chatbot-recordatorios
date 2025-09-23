@@ -774,6 +774,108 @@ def get_all_users() -> List[Dict]:
 
     return users
 
+def get_user_info(chat_id: int) -> Dict:
+    """Get user information by chat_id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT chat_id, username, first_name, last_name, created_at, last_activity
+        FROM users
+        WHERE chat_id = ?
+    ''', (chat_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            'chat_id': row[0],
+            'username': row[1],
+            'first_name': row[2],
+            'last_name': row[3],
+            'created_at': datetime.fromisoformat(row[4]),
+            'last_activity': datetime.fromisoformat(row[5])
+        }
+    return {}
+
+def get_all_user_reminders(chat_id: int, include_history: bool = True) -> List[Dict]:
+    """Get all reminders for a user, optionally including historical ones."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if include_history:
+        status_filter = "status IN ('active', 'sent', 'cancelled')"
+    else:
+        status_filter = "status = 'active'"
+
+    cursor.execute(f'''
+        SELECT id, text, datetime, status, category, created_at
+        FROM reminders
+        WHERE chat_id = ? AND {status_filter}
+        ORDER BY datetime DESC
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+    for row in rows:
+        # Parse datetime and ensure it has timezone info
+        dt = datetime.fromisoformat(row[2])
+        if dt.tzinfo is None:
+            # Assume Buenos Aires timezone for naive datetimes
+            import pytz
+            dt = pytz.timezone('America/Argentina/Buenos_Aires').localize(dt)
+
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': dt,
+            'status': row[3],
+            'category': row[4] if row[4] else 'general',
+            'created_at': datetime.fromisoformat(row[5])
+        })
+
+    return reminders
+
+def get_all_user_vault_entries(chat_id: int, include_history: bool = True) -> List[Dict]:
+    """Get all vault entries for a user, optionally including deleted ones."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if include_history:
+        status_filter = "(status IS NULL OR status IN ('active', 'deleted'))"
+    else:
+        status_filter = "(status IS NULL OR status = 'active')"
+
+    cursor.execute(f'''
+        SELECT id, text, created_at, category, status, deleted_at
+        FROM vault
+        WHERE chat_id = ? AND {status_filter}
+        ORDER BY created_at DESC
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    entries = []
+    for row in rows:
+        entry = {
+            'id': row[0],
+            'text': row[1],
+            'created_at': datetime.fromisoformat(row[2]),
+            'category': row[3] if row[3] else 'general',
+            'status': row[4] if row[4] else 'active'
+        }
+
+        if row[5]:  # deleted_at
+            entry['deleted_at'] = datetime.fromisoformat(row[5])
+
+        entries.append(entry)
+
+    return entries
+
 def delete_all_vault_entries(chat_id: int) -> int:
     """Mark all active vault entries as deleted (soft delete all)."""
     conn = sqlite3.connect(DB_PATH)
@@ -819,3 +921,12 @@ def get_vault_history(chat_id: int) -> List[Dict]:
         })
 
     return entries
+
+# Export functions (aliases for backwards compatibility)
+def get_all_reminders_for_export(chat_id: int) -> List[Dict]:
+    """Get all reminders for export (includes all statuses)."""
+    return get_all_user_reminders(chat_id, include_history=True)
+
+def get_all_vault_entries_for_export(chat_id: int) -> List[Dict]:
+    """Get all vault entries for export (includes deleted ones)."""
+    return get_all_user_vault_entries(chat_id, include_history=True)

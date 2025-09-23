@@ -63,6 +63,7 @@ def main():
         application.add_handler(CommandHandler("borrarBitacora", handlers.vault_delete_command))
         application.add_handler(CommandHandler("historialBitacora", handlers.vault_history_command))
         application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
+        application.add_handler(CommandHandler("exportar", handlers.export_command))
 
         # Handler for voice messages
         application.add_handler(MessageHandler(

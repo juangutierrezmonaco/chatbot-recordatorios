@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 import db
 import scheduler
 from transcription import transcriber
+from pdf_exporter import PDFExporter, cleanup_temp_file
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /borrarBitacora <id|todos> - Eliminar nota(s) de la bitácora
 /historialBitacora - Ver historial de entradas eliminadas
 /cancelar <id> - Cancelar recordatorio
+/exportar [completo] - Exportar todos los datos a PDF
 
 **Ejemplos de comandos:**
 • `/recordar mañana 18:00 comprar comida`
@@ -182,6 +184,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `/recordar 2025-09-20 09:30 reunión con Juan`
 • `/semana` - Ver solo recordatorios pendientes
 • `/semana todos` - Ver todos los recordatorios
+• `/exportar` - Exportar solo datos activos
+• `/exportar completo` - Exportar incluyendo historial
 • `/bitacora No me gustó el vino en Bar Central`
 • `/bitacora Si voy a La Parolaccia, pedir ravioles al pesto`
 
@@ -1403,6 +1407,74 @@ def extract_date_and_text(text: str):
         remaining_text = "recordatorio"
 
     return parsed_date, remaining_text
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Export all user data to PDF."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    # Show processing message
+    await update.message.reply_text("📄 Generando exportación en PDF...")
+
+    try:
+        # Get user info
+        user_info = db.get_user_info(chat_id)
+        if not user_info:
+            await update.message.reply_text("❌ No se pudo obtener la información del usuario.")
+            return
+
+        # Get all reminders (active, sent, cancelled)
+        all_reminders = db.get_all_reminders_for_export(chat_id)
+
+        # Get all vault entries (active and deleted)
+        all_vault_entries = db.get_all_vault_entries_for_export(chat_id)
+
+        # Check if user wants to include history
+        include_history = False
+        if context.args and len(context.args) > 0:
+            include_history = context.args[0].lower() in ['completo', 'historial', 'todo', 'full']
+
+        # Generate PDF
+        exporter = PDFExporter()
+        pdf_path = exporter.generate_export_pdf(
+            chat_id=chat_id,
+            user_info=user_info,
+            reminders=all_reminders,
+            vault_entries=all_vault_entries,
+            include_history=include_history
+        )
+
+        # Send the PDF file
+        with open(pdf_path, 'rb') as pdf_file:
+            filename = f"exportacion_datos_{chat_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=pdf_file,
+                filename=filename,
+                caption="📋 Aquí tienes tu exportación completa de datos.\n\n"
+                       "📝 Para incluir historial completo, usa: /exportar completo"
+            )
+
+        # Clean up temporary file
+        cleanup_temp_file(pdf_path)
+
+        # Send summary
+        summary_text = f"✅ Exportación completada:\n"
+        summary_text += f"📊 Recordatorios: {len(all_reminders)}\n"
+        summary_text += f"📖 Entradas de bitácora: {len(all_vault_entries)}\n"
+        if include_history:
+            summary_text += f"📜 Incluye elementos eliminados/enviados"
+        else:
+            summary_text += f"📋 Solo elementos activos (usa '/exportar completo' para incluir historial)"
+
+        await update.message.reply_text(summary_text)
+
+    except Exception as e:
+        logger.error(f"Error generating PDF export for chat {chat_id}: {e}")
+        await update.message.reply_text(
+            "❌ Error generando la exportación. Intenta nuevamente en unos momentos."
+        )
 
 async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle voice messages and transcribe them."""
