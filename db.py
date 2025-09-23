@@ -129,8 +129,13 @@ def get_today_reminders(chat_id: int) -> List[Dict]:
 
     return reminders
 
-def get_week_reminders(chat_id: int) -> List[Dict]:
-    """Get all active and sent reminders for the current week for a chat."""
+def get_week_reminders(chat_id: int, include_sent: bool = False) -> List[Dict]:
+    """Get reminders for the current week for a chat.
+
+    Args:
+        chat_id: The chat ID
+        include_sent: If True, include sent reminders. If False, only active reminders.
+    """
     import pytz
     from datetime import timedelta
 
@@ -148,10 +153,16 @@ def get_week_reminders(chat_id: int) -> List[Dict]:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute('''
+    # Choose status filter based on include_sent parameter
+    if include_sent:
+        status_filter = "status IN ('active', 'sent')"
+    else:
+        status_filter = "status = 'active'"
+
+    cursor.execute(f'''
         SELECT id, text, datetime, status
         FROM reminders
-        WHERE chat_id = ? AND status IN ('active', 'sent')
+        WHERE chat_id = ? AND {status_filter}
         AND datetime >= ? AND datetime <= ?
         ORDER BY datetime
     ''', (chat_id, week_start.isoformat(), week_end.isoformat()))

@@ -165,7 +165,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /recordar <fecha/hora> <texto> - Crear recordatorio
 /lista - Ver recordatorios activos
 /hoy - Ver recordatorios de hoy
-/semana - Ver recordatorios de esta semana
+/semana [todos] - Ver recordatorios pendientes de esta semana
 /dia <fecha> - Ver recordatorios de fecha específica
 /buscar <palabra> - Buscar recordatorios
 /historial - Ver recordatorios pasados
@@ -180,6 +180,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `/recordar mañana 18:00 comprar comida`
 • `/recordar en 30m apagar el horno`
 • `/recordar 2025-09-20 09:30 reunión con Juan`
+• `/semana` - Ver solo recordatorios pendientes
+• `/semana todos` - Ver todos los recordatorios
 • `/bitacora No me gustó el vino en Bar Central`
 • `/bitacora Si voy a La Parolaccia, pedir ravioles al pesto`
 
@@ -263,10 +265,19 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /semana command."""
     chat_id = update.effective_chat.id
-    reminders = db.get_week_reminders(chat_id)
+
+    # Check if "todos" argument is provided
+    include_sent = False
+    if context.args and context.args[0].lower() == "todos":
+        include_sent = True
+
+    reminders = db.get_week_reminders(chat_id, include_sent)
 
     if not reminders:
-        await update.message.reply_text("📅 No tienes recordatorios para esta semana.")
+        if include_sent:
+            await update.message.reply_text("📅 No tienes recordatorios para esta semana.")
+        else:
+            await update.message.reply_text("📅 No tienes recordatorios pendientes para esta semana.")
         return
 
     # Group reminders by day
@@ -288,7 +299,11 @@ async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Spanish day names
     day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
-    message = "📅 **Tus recordatorios de esta semana:**\n\n"
+    # Set message header based on what we're showing
+    if include_sent:
+        message = "📅 **Tus recordatorios de esta semana (todos):**\n\n"
+    else:
+        message = "📅 **Tus recordatorios pendientes de esta semana:**\n\n"
 
     # Get start of week (Monday)
     days_since_monday = now.weekday()

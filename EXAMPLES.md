@@ -44,8 +44,11 @@ Muestra todos los recordatorios del día actual, tanto pendientes como ya enviad
 #### Ver recordatorios de la semana
 ```
 /semana
+/semana todos
 ```
-Muestra todos los recordatorios de la semana actual (lunes a domingo) agrupados por día. Incluye tanto pendientes como enviados.
+**`/semana`** - Muestra solo los recordatorios **pendientes** de la semana actual (lunes a domingo) agrupados por día.
+
+**`/semana todos`** - Muestra **todos** los recordatorios de la semana (pendientes y enviados).
 
 #### Ver recordatorios de una fecha específica
 ```
