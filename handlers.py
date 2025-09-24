@@ -1714,10 +1714,17 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check if already activated
     if db.is_admin(chat_id):
+        gallery_count = db.get_secret_gallery_count()
+        waiting_upload = context.user_data.get('waiting_for_surprise_upload', False)
+
         await update.message.reply_text(
             "🔧 Ya tenés el modo administrador activado.\n\n"
             "Comandos de admin disponibles:\n"
-            "• `/subir_sorpresa` - Subir foto para galería secreta"
+            "• `/subir_sorpresa` - Subir foto para galería secreta\n\n"
+            f"📊 **Estado Debug:**\n"
+            f"• Fotos en galería: {gallery_count}\n"
+            f"• Esperando subida: {'Sí' if waiting_upload else 'No'}\n"
+            f"• Chat ID: {chat_id}"
         )
         return
 
