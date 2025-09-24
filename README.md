@@ -2,7 +2,34 @@
 
 Un bot de Telegram inteligente que te permite crear recordatorios usando comandos o lenguaje natural en español.
 
-## 🚀 Instalación
+## 🚀 Deploy Gratis en Render (Recomendado)
+
+**¡La forma más fácil de tener tu bot funcionando 24/7 gratis!**
+
+1. **Fork este repositorio en tu GitHub**
+
+2. **Ve a [render.com](https://render.com) y crea una cuenta**
+
+3. **Conecta tu repositorio:**
+   - Click en "New +" → "Web Service"
+   - Conecta tu repo de GitHub
+   - Render detectará automáticamente que es una app Python
+
+4. **Configura las variables de entorno:**
+   - `TELEGRAM_TOKEN`: Tu token de Telegram
+   - `OPENAI_API_KEY`: (Opcional) Para mensajes de voz
+
+5. **¡Deploy automático!** Render creará y ejecutará tu bot
+
+**✅ Ventajas de Render:**
+- 🆓 **Gratis**: 750 horas/mes (suficiente para 24/7)
+- 🔄 **Auto-deploy**: Se actualiza con cada git push
+- 📊 **Logs**: Para monitorear tu bot
+- 💾 **SQLite**: Tu base de datos funciona sin cambios
+
+---
+
+## 🛠️ Instalación Local (Desarrollo)
 
 1. **Clonar el repositorio:**
 ```bash
@@ -23,49 +50,66 @@ TELEGRAM_TOKEN=tu_token_aqui
 OPENAI_API_KEY=tu_openai_api_key_aqui
 ```
 
-**Variables requeridas:**
-- `TELEGRAM_TOKEN`: Token de tu bot de Telegram (obligatorio)
-- `OPENAI_API_KEY`: API key de OpenAI para transcripción de voz (opcional)
-
-**Para obtener el token de Telegram:**
-1. Habla con [@BotFather](https://t.me/botfather) en Telegram
-2. Usa `/newbot` y sigue las instrucciones
-3. Copia el token que te da
-
-**Para obtener la API key de OpenAI (para mensajes de voz):**
-1. Ve a [platform.openai.com](https://platform.openai.com/)
-2. Crea una cuenta y ve a API Keys
-3. Genera una nueva API key
-4. **Nota:** Los mensajes de voz requieren créditos en tu cuenta de OpenAI
-
 4. **Ejecutar el bot:**
 ```bash
 python3 bot.py
 ```
 
+### 🔑 **Obtener Credenciales:**
+
+**Token de Telegram:**
+1. Habla con [@BotFather](https://t.me/botfather) en Telegram
+2. Usa `/newbot` y sigue las instrucciones
+3. Copia el token que te da
+
+**OpenAI API Key (opcional):**
+1. Ve a [platform.openai.com](https://platform.openai.com/)
+2. Crea una cuenta y ve a API Keys
+3. Genera una nueva API key
+4. **Nota:** Para mensajes de voz (requiere créditos)
+
 ## 📋 Funcionalidades
 
-### Comandos disponibles:
-
-- `/start` - Mensaje de bienvenida con instrucciones
-- `/recordar <fecha/hora> <texto>` - Crear recordatorio
-- `/lista` - Ver recordatorios activos
-- `/hoy` - Ver recordatorios de hoy
-- `/dia <fecha>` - Ver recordatorios de fecha específica
-- `/buscar <palabra>` - Buscar recordatorios
-- `/historial` - Ver recordatorios pasados
-- `/baul <texto>` - Guardar nota en el baúl
-- `/lista_baul` - Ver todas las notas del baúl
-- `/buscar_baul <palabra>` - Buscar en el baúl
-- `/borrar_baul <id>` - Eliminar nota del baúl
+### ✨ **Comandos Principales:**
+- `/start` - Mensaje de bienvenida
+- `/recordar <fecha/hora> <texto>` - Crear recordatorios
+- `/lista [filtro]` - Ver recordatorios por categoría
+- `/hoy` - Recordatorios de hoy (pendientes y enviados)
+- `/semana [pendientes]` - Vista semanal completa
+- `/dia <fecha>` - Ver cualquier día (incluye "ayer", fechas pasadas)
+- `/buscar <término>` - Búsqueda inteligente
+- `/historial [límite]` - Recordatorios pasados
+- `/repetir <id> [nueva_fecha]` - Duplicar recordatorios
 - `/cancelar <id>` - Cancelar recordatorio(s)
+- `/importante <intervalo> <fecha> <texto>` - Recordatorios que se repiten
+- `/completar <id>` - Completar recordatorios importantes
+- `/exportar [completo]` - Exportar a PDF
 
-### Ejemplos de comandos:
+### 📖 **Sistema de Bitácora:**
+- `/bitacora <texto>` - Crear nota
+- `/listarBitacora [límite]` - Ver todas las notas
+- `/buscarBitacora <término>` - Buscar en notas
+- `/borrarBitacora <id>` - Eliminar notas
+- `/historialBitacora` - Historial completo
+
+### 💕 **Funciones Especiales:**
+- `/novia` - Modo romántico con validación
+- `/fortuna` - Fortuna diaria romántica
+- `/admin` - Modo administrador
+- `/subirSorpresa` - Subir fotos (admin)
+- `/sorpresa` - Recibir sorpresas aleatorias
+- `/explicar <comando>` - Ayuda detallada
+
+### 🌟 **Ejemplos de comandos:**
 
 ```
 /recordar mañana 18:00 comprar comida
-/recordar en 30m apagar el horno
-/recordar 2025-09-20 09:30 reunión con Juan
+/recordar en una hora tomar medicamento
+/repetir 14 en dos horas
+/importante 15 hoy a las 21:00 tomar pastilla
+/dia ayer
+/semana pendientes
+/exportar completo
 ```
 
 ### Lenguaje natural:
