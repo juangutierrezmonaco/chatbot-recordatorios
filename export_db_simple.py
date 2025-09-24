@@ -32,15 +32,16 @@ def export_database_to_txt():
             f.write(f"  - {table[0]}\n")
         f.write("\n")
 
-        # ========== RECORDATORIOS ==========
-        f.write("🔔 RECORDATORIOS\n")
+        # ========== RECORDATORIOS MODERNOS (reminders) ==========
+        f.write("🔔 RECORDATORIOS MODERNOS\n")
         f.write("-" * 50 + "\n")
 
         try:
             cursor.execute("""
-                SELECT id, chat_id, texto, fecha_hora, estado
-                FROM recordatorios
-                ORDER BY fecha_hora DESC
+                SELECT id, chat_id, text, datetime, status, category,
+                       is_important, repeat_interval, created_at, last_sent
+                FROM reminders
+                ORDER BY datetime DESC
             """)
 
             reminders = cursor.fetchall()
@@ -52,64 +53,213 @@ def export_database_to_txt():
                     f.write(f"Texto: {reminder[2]}\n")
                     f.write(f"Fecha/Hora: {reminder[3]}\n")
                     f.write(f"Estado: {reminder[4]}\n")
+                    f.write(f"Categoría: {reminder[5]}\n")
+                    f.write(f"Importante: {'Sí' if reminder[6] else 'No'}\n")
+                    if reminder[7]:
+                        f.write(f"Intervalo repetición: {reminder[7]} min\n")
+                    f.write(f"Creado: {reminder[8]}\n")
+                    if reminder[9]:
+                        f.write(f"Último envío: {reminder[9]}\n")
                     f.write("-" * 30 + "\n")
 
-                f.write(f"\nTotal recordatorios: {len(reminders)}\n")
+                f.write(f"\nTotal recordatorios modernos: {len(reminders)}\n")
             else:
-                f.write("No hay recordatorios.\n")
+                f.write("No hay recordatorios modernos.\n")
         except sqlite3.OperationalError as e:
-            f.write(f"Error al leer recordatorios: {e}\n")
+            f.write(f"Error al leer recordatorios modernos: {e}\n")
 
         f.write("\n")
 
-        # ========== ESTADÍSTICAS ==========
-        f.write("📊 ESTADÍSTICAS\n")
+        # ========== RECORDATORIOS LEGACY (recordatorios) ==========
+        f.write("🔔 RECORDATORIOS LEGACY\n")
         f.write("-" * 50 + "\n")
 
         try:
-            # Contar recordatorios por estado
-            cursor.execute("SELECT estado, COUNT(*) FROM recordatorios GROUP BY estado")
-            status_counts = cursor.fetchall()
-            if status_counts:
-                f.write("Recordatorios por estado:\n")
-                for status, count in status_counts:
+            cursor.execute("""
+                SELECT id, chat_id, texto, fecha_hora, estado
+                FROM recordatorios
+                ORDER BY fecha_hora DESC
+            """)
+
+            legacy_reminders = cursor.fetchall()
+            if legacy_reminders:
+                for i, reminder in enumerate(legacy_reminders, 1):
+                    f.write(f"#{i}\n")
+                    f.write(f"ID: {reminder[0]}\n")
+                    f.write(f"Chat ID: {reminder[1]}\n")
+                    f.write(f"Texto: {reminder[2]}\n")
+                    f.write(f"Fecha/Hora: {reminder[3]}\n")
+                    f.write(f"Estado: {reminder[4]}\n")
+                    f.write("-" * 30 + "\n")
+
+                f.write(f"\nTotal recordatorios legacy: {len(legacy_reminders)}\n")
+            else:
+                f.write("No hay recordatorios legacy.\n")
+        except sqlite3.OperationalError as e:
+            f.write(f"Error al leer recordatorios legacy: {e}\n")
+
+        f.write("\n")
+
+        # ========== BITÁCORA (VAULT) ==========
+        f.write("📖 BITÁCORA\n")
+        f.write("-" * 50 + "\n")
+
+        try:
+            cursor.execute("""
+                SELECT id, chat_id, text, category, created_at, status, deleted_at
+                FROM vault
+                ORDER BY created_at DESC
+            """)
+
+            vault_entries = cursor.fetchall()
+            if vault_entries:
+                for i, entry in enumerate(vault_entries, 1):
+                    f.write(f"#{i}\n")
+                    f.write(f"ID: {entry[0]}\n")
+                    f.write(f"Chat ID: {entry[1]}\n")
+                    f.write(f"Texto: {entry[2]}\n")
+                    f.write(f"Categoría: {entry[3]}\n")
+                    f.write(f"Creado: {entry[4]}\n")
+                    f.write(f"Estado: {entry[5]}\n")
+                    if entry[6]:
+                        f.write(f"Eliminado: {entry[6]}\n")
+                    f.write("-" * 30 + "\n")
+
+                f.write(f"\nTotal notas bitácora: {len(vault_entries)}\n")
+            else:
+                f.write("No hay notas en la bitácora.\n")
+        except sqlite3.OperationalError as e:
+            f.write(f"Error al leer bitácora: {e}\n")
+
+        f.write("\n")
+
+        # ========== USUARIOS ==========
+        f.write("👥 USUARIOS\n")
+        f.write("-" * 50 + "\n")
+
+        try:
+            cursor.execute("""
+                SELECT id, chat_id, username, first_name, last_name, is_bot,
+                       language_code, created_at, last_activity, is_girlfriend,
+                       girlfriend_activated_at, is_admin, admin_activated_at
+                FROM users
+                ORDER BY created_at DESC
+            """)
+
+            users = cursor.fetchall()
+            if users:
+                for i, user in enumerate(users, 1):
+                    f.write(f"#{i}\n")
+                    f.write(f"ID: {user[0]}\n")
+                    f.write(f"Chat ID: {user[1]}\n")
+                    f.write(f"Username: {user[2] or 'Sin username'}\n")
+                    f.write(f"Nombre: {user[3] or 'Sin nombre'}\n")
+                    f.write(f"Apellido: {user[4] or 'Sin apellido'}\n")
+                    f.write(f"Es bot: {'Sí' if user[5] else 'No'}\n")
+                    f.write(f"Idioma: {user[6] or 'No especificado'}\n")
+                    f.write(f"Registrado: {user[7]}\n")
+                    f.write(f"Última actividad: {user[8]}\n")
+                    f.write(f"Modo novia: {'Sí' if user[9] else 'No'}\n")
+                    if user[10]:
+                        f.write(f"Novia activado: {user[10]}\n")
+                    f.write(f"Admin: {'Sí' if user[11] else 'No'}\n")
+                    if user[12]:
+                        f.write(f"Admin activado: {user[12]}\n")
+                    f.write("-" * 30 + "\n")
+
+                f.write(f"\nTotal usuarios: {len(users)}\n")
+            else:
+                f.write("No hay usuarios registrados.\n")
+        except sqlite3.OperationalError as e:
+            f.write(f"Error al leer usuarios: {e}\n")
+
+        f.write("\n")
+
+        # ========== GALERÍA SECRETA ==========
+        f.write("🎁 GALERÍA SECRETA\n")
+        f.write("-" * 50 + "\n")
+
+        try:
+            cursor.execute("""
+                SELECT id, file_id, file_type, original_filename, description,
+                       uploaded_by, uploaded_at, is_active, local_file_path
+                FROM secret_gallery
+                ORDER BY uploaded_at DESC
+            """)
+
+            gallery = cursor.fetchall()
+            if gallery:
+                for i, item in enumerate(gallery, 1):
+                    f.write(f"#{i}\n")
+                    f.write(f"ID: {item[0]}\n")
+                    f.write(f"File ID: {item[1] or 'N/A'}\n")
+                    f.write(f"Tipo: {item[2]}\n")
+                    f.write(f"Archivo original: {item[3] or 'Sin nombre'}\n")
+                    f.write(f"Descripción: {item[4] or 'Sin descripción'}\n")
+                    f.write(f"Subido por: {item[5]}\n")
+                    f.write(f"Fecha: {item[6]}\n")
+                    f.write(f"Activo: {'Sí' if item[7] else 'No'}\n")
+                    f.write(f"Ruta local: {item[8] or 'N/A'}\n")
+                    f.write("-" * 30 + "\n")
+
+                f.write(f"\nTotal archivos galería: {len(gallery)}\n")
+            else:
+                f.write("No hay archivos en la galería secreta.\n")
+        except sqlite3.OperationalError as e:
+            f.write(f"Error al leer galería secreta: {e}\n")
+
+        f.write("\n")
+
+        # ========== ESTADÍSTICAS GENERALES ==========
+        f.write("📊 ESTADÍSTICAS GENERALES\n")
+        f.write("-" * 50 + "\n")
+
+        try:
+            # Recordatorios modernos por estado
+            cursor.execute("SELECT status, COUNT(*) FROM reminders GROUP BY status")
+            modern_status = cursor.fetchall()
+            if modern_status:
+                f.write("Recordatorios modernos por estado:\n")
+                for status, count in modern_status:
                     f.write(f"  {status}: {count}\n")
 
-            # Total de recordatorios
-            cursor.execute("SELECT COUNT(*) FROM recordatorios")
-            total_count = cursor.fetchone()[0]
-            f.write(f"\nTotal de recordatorios: {total_count}\n")
+            # Recordatorios legacy por estado
+            cursor.execute("SELECT estado, COUNT(*) FROM recordatorios GROUP BY estado")
+            legacy_status = cursor.fetchall()
+            if legacy_status:
+                f.write("\nRecordatorios legacy por estado:\n")
+                for estado, count in legacy_status:
+                    f.write(f"  {estado}: {count}\n")
 
-            # Contar chats únicos
-            cursor.execute("SELECT COUNT(DISTINCT chat_id) FROM recordatorios")
-            chat_count = cursor.fetchone()[0]
-            f.write(f"Chats únicos: {chat_count}\n")
+            # Notas por categoría
+            cursor.execute("SELECT category, COUNT(*) FROM vault GROUP BY category")
+            vault_categories = cursor.fetchall()
+            if vault_categories:
+                f.write("\nNotas por categoría:\n")
+                for category, count in vault_categories:
+                    f.write(f"  {category}: {count}\n")
+
+            # Contadores totales
+            cursor.execute("SELECT COUNT(*) FROM reminders")
+            modern_total = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM recordatorios")
+            legacy_total = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM vault")
+            vault_total = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM users")
+            users_total = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM secret_gallery")
+            gallery_total = cursor.fetchone()[0]
+
+            f.write(f"\nTotales:\n")
+            f.write(f"  Recordatorios modernos: {modern_total}\n")
+            f.write(f"  Recordatorios legacy: {legacy_total}\n")
+            f.write(f"  Notas bitácora: {vault_total}\n")
+            f.write(f"  Usuarios: {users_total}\n")
+            f.write(f"  Archivos galería: {gallery_total}\n")
 
         except sqlite3.OperationalError as e:
             f.write(f"Error al generar estadísticas: {e}\n")
-
-        # ========== DATOS CRUDOS (COMPLETOS) ==========
-        f.write("\n")
-        f.write("🗃️ DATOS CRUDOS COMPLETOS\n")
-        f.write("-" * 50 + "\n")
-
-        try:
-            cursor.execute("SELECT * FROM recordatorios ORDER BY id")
-            all_data = cursor.fetchall()
-
-            # Obtener nombres de columnas
-            cursor.execute("PRAGMA table_info(recordatorios)")
-            columns = [col[1] for col in cursor.fetchall()]
-
-            f.write("Columnas: " + " | ".join(columns) + "\n")
-            f.write("-" * 50 + "\n")
-
-            for row in all_data:
-                row_str = " | ".join(str(cell) for cell in row)
-                f.write(f"{row_str}\n")
-
-        except sqlite3.OperationalError as e:
-            f.write(f"Error al exportar datos crudos: {e}\n")
 
         conn.close()
 
