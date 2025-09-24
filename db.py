@@ -1179,3 +1179,23 @@ def delete_secret_photo(photo_id: int, admin_chat_id: int) -> bool:
         logger.info(f"Admin {admin_chat_id} deleted secret photo {photo_id}")
 
     return success
+
+def mark_photo_invalid(photo_id: int) -> bool:
+    """Mark a photo as invalid (e.g., when file_id fails to send)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE secret_gallery
+        SET is_active = FALSE
+        WHERE id = ?
+    ''', (photo_id,))
+
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    if success:
+        logger.info(f"Marked secret photo {photo_id} as invalid")
+
+    return success

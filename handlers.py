@@ -1813,44 +1813,82 @@ async def surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Send the photo based on its type
-    try:
-        if random_photo['file_type'] == 'photo':
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=random_photo['file_id'],
-                caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                       f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
-            )
-        elif random_photo['file_type'] == 'document':
-            await context.bot.send_document(
-                chat_id=chat_id,
-                document=random_photo['file_id'],
-                caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                       f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
-            )
-        elif random_photo['file_type'] == 'sticker':
-            await context.bot.send_sticker(
-                chat_id=chat_id,
-                sticker=random_photo['file_id']
-            )
-            await update.message.reply_text(
-                f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                f"💕 {random_photo['description'] or 'Un sticker especial para vos'} 💕"
-            )
-        else:
-            # Fallback for other file types
-            await update.message.reply_text(
-                f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
-            )
+    # Try to send the photo, with retry logic for invalid file_ids
+    max_retries = 3
+    retry_count = 0
 
-    except Exception as e:
-        logger.error(f"Error sending surprise photo: {e}")
-        await update.message.reply_text(
-            "😅 Hubo un problemita enviando la sorpresa...\n\n"
-            "¡Pero el amor está ahí! Intenta de nuevo 💕"
-        )
+    while retry_count < max_retries:
+        try:
+            if random_photo['file_type'] == 'photo':
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=random_photo['file_id'],
+                    caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                           f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
+                )
+            elif random_photo['file_type'] == 'document':
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=random_photo['file_id'],
+                    caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                           f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
+                )
+            elif random_photo['file_type'] == 'sticker':
+                await context.bot.send_sticker(
+                    chat_id=chat_id,
+                    sticker=random_photo['file_id']
+                )
+                await update.message.reply_text(
+                    f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                    f"💕 {random_photo['description'] or 'Un sticker especial para vos'} 💕"
+                )
+            else:
+                # Fallback for other file types
+                await update.message.reply_text(
+                    f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                    f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
+                )
+
+            # Success! Break the retry loop
+            break
+
+        except Exception as e:
+            error_msg = str(e).lower()
+
+            # Check if it's a file_id error
+            if "wrong remote file identifier" in error_msg or "file_id" in error_msg:
+                logger.warning(f"Invalid file_id for photo {random_photo['id']}: {e}")
+
+                # Mark this photo as invalid
+                db.mark_photo_invalid(random_photo['id'])
+
+                # Try to get another random photo
+                retry_count += 1
+                if retry_count < max_retries:
+                    random_photo = db.get_random_secret_photo()
+                    if not random_photo:
+                        await update.message.reply_text(
+                            "😔 La galería secreta está vacía por ahora...\n\n"
+                            "¡Pero pronto habrá sorpresas esperándote! 💕✨"
+                        )
+                        return
+                    logger.info(f"Retrying with new photo (attempt {retry_count + 1})")
+                    continue
+                else:
+                    # Max retries reached
+                    await update.message.reply_text(
+                        "😅 Hubo un problemita con las sorpresas guardadas...\n\n"
+                        "¡Pero el amor está ahí! Pedí al admin que suba nuevas fotos 💕"
+                    )
+                    return
+            else:
+                # Other error - don't retry
+                logger.error(f"Error sending surprise photo: {e}")
+                await update.message.reply_text(
+                    "😅 Hubo un problemita enviando la sorpresa...\n\n"
+                    "¡Pero el amor está ahí! Intenta de nuevo 💕"
+                )
+                return
 
 async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photo/document uploads for secret gallery when admin is in upload mode."""
