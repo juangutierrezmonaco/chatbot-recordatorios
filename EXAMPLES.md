@@ -651,6 +651,151 @@ Si cambias de teléfono o chat, puedes exportar todo y tener un registro complet
 - **Archivo temporal** - Se elimina automáticamente después del envío
 - **Tamaño de archivo** - Depende de la cantidad de datos (típicamente < 5MB)
 
+## 🔄 Duplicación de Recordatorios
+
+### Comando `/repetir`
+
+#### Sintaxis
+```
+/repetir <id> [nueva fecha/hora]
+```
+
+#### Ejemplos Prácticos
+
+**Repetir con nueva fecha:**
+```
+/repetir 123 mañana a las 10
+```
+✅ **Resultado:** Crea una copia del recordatorio #123 programada para mañana a las 10:00
+
+**Repetir con fecha original:**
+```
+/repetir 456
+```
+✅ **Resultado:** Crea una copia exacta del recordatorio #456 con la misma fecha/hora
+
+**Casos de uso típicos:**
+```
+# Reunión semanal
+/repetir 789 el próximo martes a las 15:30
+
+# Medicamento diario
+/repetir 321 mañana a las 8
+
+# Recordatorio mensual
+/repetir 654 el 15 del próximo mes
+```
+
+## 📅 Comando `/dia` Mejorado
+
+### Búsqueda de Fechas Pasadas
+
+#### Nuevas Funcionalidades
+```
+/dia ayer          # Recordatorios de ayer
+/dia 22/09         # 22 de septiembre (año actual)
+/dia el lunes      # Último/próximo lunes
+/dia 25/12/2023    # Fecha específica con año
+```
+
+#### Ejemplos Comparativos
+
+**Antes (solo futuro):**
+```
+/dia 22/09
+❌ Interpretaba como 22/09/2026 si 22/09/2025 ya pasó
+```
+
+**Ahora (inteligente):**
+```
+/dia 22/09
+✅ Muestra 22/09/2025 (año actual), pasado o futuro
+```
+
+**Casos de uso:**
+```
+# Revisar qué hice ayer
+/dia ayer
+
+# Verificar recordatorios de fecha pasada
+/dia 15/09
+
+# Planificar día futuro
+/dia mañana
+
+# Revisar día específico
+/dia el viernes
+```
+
+## 🎯 Sistema de Ayuda
+
+### Comando `/explicar`
+
+#### Ayuda Interactiva
+```
+/explicar recordar     # Guía completa del comando recordar
+/explicar importante   # Cómo usar recordatorios importantes
+/explicar lista       # Todas las opciones de listado
+/explicar bitacora    # Sistema de notas personales
+```
+
+#### Ejemplo de Salida
+```
+/explicar recordar
+
+📝 **Comando /recordar**
+
+**Descripción:** Crea recordatorios con fechas y horarios flexibles
+
+**Sintaxis:** `/recordar <fecha/hora> <texto>`
+
+**Ejemplos:**
+• `/recordar mañana a las 10 reunión con Juan`
+• `/recordar el viernes a las 15:30 llamar al médico`
+• `/recordar 25/12 a las 9 feliz navidad!`
+
+**Características:**
+🕐 Horarios inteligentes (AM/PM automático)
+📅 Fechas flexibles (mañana, viernes, 25/12)
+⚡ Fechas relativas (en 2 horas, pasado mañana)
+🏷️ Categorización automática
+🔔 Notificaciones puntuales
+```
+
+## 💡 Casos de Uso Recomendados
+
+### Flujos de Trabajo Mejorados
+
+#### Planificación Semanal
+```
+1. /semana                          # Ver toda la semana
+2. /repetir 123 la próxima semana   # Duplicar tareas recurrentes
+3. /explicar dia                    # Si necesitas ayuda con fechas
+```
+
+#### Seguimiento Diario
+```
+1. /hoy                             # Revisar día actual
+2. /dia ayer                        # Ver qué se completó ayer
+3. /dia mañana                      # Planificar día siguiente
+```
+
+#### Gestión de Recordatorios Recurrentes
+```
+1. /lista                           # Ver recordatorios activos
+2. /repetir 456 la próxima semana   # Duplicar eventos semanales
+3. /repetir 789 el próximo mes      # Duplicar eventos mensuales
+```
+
+### Mejores Prácticas Actualizadas
+- **Usa categorías descriptivas** para mejor organización
+- **Programa recordatorios importantes** para cosas críticas
+- **Exporta regularmente** para hacer backup de tus datos
+- **Usa fechas relativas** (`mañana`, `en 2 horas`) para flexibilidad
+- **Duplica recordatorios recurrentes** con `/repetir` para ahorrar tiempo
+- **Consulta fechas pasadas** con `/dia` para hacer seguimiento
+- **Usa `/explicar`** cuando necesites recordar cómo funciona un comando
+
 ---
 
 🤖 **Bot desarrollado con Claude Code** - Todas las funcionalidades están completamente integradas y probadas.

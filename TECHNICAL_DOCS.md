@@ -614,6 +614,175 @@ GROUP BY category
 ORDER BY usage_count DESC;
 ```
 
+## 🔄 Sistema de Duplicación de Recordatorios
+
+### Comando `/repetir`
+Permite duplicar recordatorios existentes con nuevas fechas.
+
+#### Implementación Técnica
+```python
+# handlers.py - Comando de repetición
+async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 1. Obtener recordatorio original por ID
+    original_reminder = db.get_reminder_by_id(chat_id, reminder_id)
+
+    # 2. Parsear nueva fecha/hora (opcional)
+    if len(context.args) > 1:
+        new_datetime, _ = extract_date_and_text(date_time_text)
+    else:
+        new_datetime = datetime.fromisoformat(original_reminder['datetime'])
+
+    # 3. Crear recordatorio duplicado
+    new_reminder_id = db.add_reminder(...)
+    scheduler.schedule_reminder(context.job_queue, new_reminder_id, ...)
+```
+
+#### Funcionalidades
+- **Preserva configuración**: Categoria, tipo importante, intervalo
+- **Fecha flexible**: Nueva fecha/hora o reutiliza original
+- **Scheduling automático**: Programa el nuevo recordatorio
+- **Feedback completo**: Muestra detalles del recordatorio duplicado
+
+### Función de Base de Datos
+```python
+def get_reminder_by_id(chat_id: int, reminder_id: int) -> dict:
+    """Obtiene un recordatorio específico por ID y chat_id."""
+    # Retorna: id, text, datetime, category, is_important, repeat_interval
+```
+
+## 📅 Mejoras en Comando `/dia`
+
+### Soporte para Fechas Pasadas
+El comando `/dia` ahora soporta fechas pasadas y el parámetro "ayer".
+
+#### Función de Parsing Mejorada
+```python
+def _parse_date_only_with_past(text: str) -> datetime:
+    # 1. Manejo especial para "ayer"
+    if 'ayer' in text.lower():
+        return now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+
+    # 2. Patrón DD/MM directo (sin asumir año futuro)
+    date_pattern = r'^(\d{1,2})[\/-](\d{1,2})$'
+    match = re.match(date_pattern, text)
+    if match:
+        day, month = int(match.group(1)), int(match.group(2))
+        return _smart_date_parse_with_past(day, month, now)
+```
+
+#### Funciones de Parsing Auxiliares
+```python
+def _smart_date_parse_with_past(day: int, month: int, now: datetime) -> datetime:
+    """Parsea DD/MM permitiendo fechas pasadas del año actual."""
+    # Intenta año actual primero, sin proyectar al futuro
+    target_date = now.replace(year=now.year, month=month, day=day, hour=0, ...)
+    return target_date
+```
+
+## 🎯 Sistema de Ayuda Interactiva
+
+### Comando `/explicar`
+Sistema completo de ayuda con ejemplos y características detalladas.
+
+#### Comandos Documentados
+```python
+explanations = {
+    'recordar': {
+        'title': '📝 **Comando /recordar**',
+        'description': 'Crea recordatorios con fechas y horarios flexibles',
+        'syntax': '`/recordar <fecha/hora> <texto>`',
+        'examples': [
+            '/recordar mañana a las 10 reunión con Juan',
+            '/recordar el viernes a las 15:30 llamar al médico',
+            # ... más ejemplos
+        ],
+        'features': [
+            '🕐 Horarios inteligentes (AM/PM automático)',
+            '📅 Fechas flexibles (mañana, viernes, 25/12)',
+            # ... más características
+        ]
+    },
+    # ... otros comandos
+}
+```
+
+#### Funcionalidades
+- **Cobertura completa**: Todos los comandos principales documentados
+- **Ejemplos prácticos**: Casos de uso reales para cada comando
+- **Características detalladas**: Explicación técnica de capacidades
+- **Formato Markdown**: Presentación clara y estructurada
+
+## 🎮 Funcionalidades Románticas
+
+### Sistema de Validación de Novia
+Funcionalidades especiales activadas mediante frases románticas.
+
+#### Comando `/novia`
+```python
+def validate_girlfriend_phrase(user_phrase: str) -> bool:
+    target_phrases = [
+        "sos lo más lindo de mi vida",
+        "te amo tanto mi amor"
+    ]
+    # Comparación inteligente ignorando tildes, mayúsculas y signos
+```
+
+### Fortuna Diaria Romántica
+```python
+async def fortune_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    romantic_fortunes = [
+        "💕 Hoy tu amor brillará más que nunca, mi cielo ✨",
+        "🌹 Un día perfecto te espera, amor de mi vida 💖",
+        # ... 30 mensajes únicos
+    ]
+```
+
+### Galería Secreta
+Sistema de almacenamiento local para fotos sorpresa.
+
+#### Arquitectura Técnica
+```sql
+-- Migration 8.sql - Tabla de galería secreta
+CREATE TABLE secret_gallery (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    local_file_path TEXT NOT NULL,     -- Ruta local del archivo
+    file_type TEXT NOT NULL,           -- 'photo', 'document', 'sticker'
+    original_filename TEXT,            -- Nombre original
+    description TEXT,                  -- Descripción opcional
+    uploaded_by INTEGER NOT NULL,     -- chat_id del admin
+    uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
+```
+
+#### Comandos de Galería
+- `/admin` - Activación de modo administrador (password: admin6143)
+- `/subirSorpresa` - Subida de archivos por admin (pascalCase)
+- `/sorpresa` - Envío aleatorio para novia activada
+
+#### Almacenamiento Local
+```python
+# Descarga y guarda archivos localmente
+unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+local_file_path = os.path.join("secret_gallery", unique_filename)
+await file_obj.download_to_drive(local_file_path)
+```
+
+#### Handler de Archivos
+```python
+# bot.py - Handler específico para medios
+application.add_handler(MessageHandler(
+    filters.PHOTO | filters.Document.ALL | filters.Sticker.ALL,
+    handlers.handle_surprise_upload
+))
+```
+
+### Migración de Comandos a PascalCase
+Se eliminaron comandos snake_case legacy:
+- ❌ `lista_bitacora`, `buscar_bitacora`, `borrar_bitacora`
+- ✅ `listarBitacora`, `buscarBitacora`, `borrarBitacora`
+- ✅ `subirSorpresa` (nuevo comando en pascalCase)
+
 ---
 
-📝 **Documentación creada con Claude Code** - Última actualización: 2025-09-23
+📝 **Documentación creada con Claude Code** - Última actualización: 2025-09-24
