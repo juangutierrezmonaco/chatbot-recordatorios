@@ -54,9 +54,6 @@ def main():
         application.add_handler(CommandHandler("buscar", handlers.search_command))
         application.add_handler(CommandHandler("historial", handlers.history_command))
         application.add_handler(CommandHandler("bitacora", handlers.vault_command))
-        application.add_handler(CommandHandler("lista_bitacora", handlers.vault_list_command))
-        application.add_handler(CommandHandler("buscar_bitacora", handlers.vault_search_command))
-        application.add_handler(CommandHandler("borrar_bitacora", handlers.vault_delete_command))
         # camelCase commands for mobile friendliness
         application.add_handler(CommandHandler("listarBitacora", handlers.vault_list_command))
         application.add_handler(CommandHandler("buscarBitacora", handlers.vault_search_command))
@@ -68,7 +65,7 @@ def main():
         application.add_handler(CommandHandler("novia", handlers.girlfriend_command))
         application.add_handler(CommandHandler("fortuna", handlers.fortune_command))
         application.add_handler(CommandHandler("admin", handlers.admin_command))
-        application.add_handler(CommandHandler("subir_sorpresa", handlers.upload_surprise_command))
+        application.add_handler(CommandHandler("subirSorpresa", handlers.upload_surprise_command))
         application.add_handler(CommandHandler("sorpresa", handlers.surprise_command))
         application.add_handler(CommandHandler("exportar", handlers.export_command))
 

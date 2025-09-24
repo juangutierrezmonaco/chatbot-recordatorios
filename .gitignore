@@ -9,6 +9,9 @@
 *.sqlite3
 recordatorios.db
 
+# Secret gallery - user uploaded content
+secret_gallery/
+
 # Python
 __pycache__/
 *.py[cod]

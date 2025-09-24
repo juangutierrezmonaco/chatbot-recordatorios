@@ -451,7 +451,8 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Uso: /dia <fecha>\n"
             "Ejemplos:\n"
             "• /dia mañana\n"
-            "• /dia 25/12\n"
+            "• /dia ayer\n"
+            "• /dia 22/09\n"
             "• /dia el lunes\n"
             "• /dia 25-12-2025"
         )
@@ -460,14 +461,15 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     date_text = ' '.join(context.args)
 
-    # Parse the date
-    target_date = _parse_date_only(date_text)
+    # Parse the date (allowing past dates for /dia command)
+    target_date = _parse_date_only_with_past(date_text)
 
     if not target_date:
         await update.message.reply_text(
             "❌ No pude entender la fecha. Ejemplos:\n"
             "• mañana\n"
-            "• 25/12\n"
+            "• ayer\n"
+            "• 22/09\n"
             "• el viernes\n"
             "• 25-12-2025"
         )
@@ -1042,6 +1044,70 @@ def _smart_date_parse(day: int, month: int, now: datetime) -> datetime:
     except ValueError:
         return None
 
+def _smart_date_parse_with_past(day: int, month: int, now: datetime) -> datetime:
+    """Parse day/month intelligently, allowing past dates (e.g., '22/09')."""
+    if day < 1 or day > 31 or month < 1 or month > 12:
+        return None
+
+    # Always try current year first, regardless of whether it's past or future
+    try:
+        target_date = now.replace(year=now.year, month=month, day=day, hour=0, minute=0, second=0, microsecond=0)
+        return target_date
+    except ValueError:
+        # If invalid for current year (e.g., Feb 30), try previous year
+        try:
+            target_date = now.replace(year=now.year - 1, month=month, day=day, hour=0, minute=0, second=0, microsecond=0)
+            return target_date
+        except ValueError:
+            return None
+
+def _smart_day_parse_with_past(day: int, now: datetime) -> datetime:
+    """Parse day of current month intelligently, allowing past dates."""
+    if day < 1 or day > 31:
+        return None
+
+    try:
+        # Try current month first
+        target_date = now.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
+        return target_date
+    except ValueError:
+        return None
+
+def _smart_weekday_day_parse_with_past(weekday_str: str, day: int, now: datetime) -> datetime:
+    """Parse weekday + day combination, allowing past dates."""
+    weekdays = {
+        'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3,
+        'viernes': 4, 'sabado': 5, 'domingo': 6
+    }
+
+    target_weekday = weekdays.get(weekday_str.lower())
+    if target_weekday is None or day < 1 or day > 31:
+        return None
+
+    # Find the date that matches both weekday and day in current or previous months
+    for month_offset in range(0, -12, -1):  # Check current and previous 12 months
+        try:
+            test_month = now.month + month_offset
+            test_year = now.year
+
+            # Handle year rollover
+            while test_month <= 0:
+                test_month += 12
+                test_year -= 1
+            while test_month > 12:
+                test_month -= 12
+                test_year += 1
+
+            target_date = now.replace(year=test_year, month=test_month, day=day, hour=0, minute=0, second=0, microsecond=0)
+
+            if target_date.weekday() == target_weekday:
+                return target_date
+
+        except ValueError:
+            continue
+
+    return None
+
 def _smart_hour_parse(hour: int, minute: int, now: datetime) -> datetime:
     """Parse hour intelligently (e.g., 'a las 9')."""
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
@@ -1224,6 +1290,65 @@ def _highlight_keyword(text: str, keyword: str) -> str:
         return text
 
     return pattern.sub(replace_func, text)
+
+def _parse_date_only_with_past(text: str) -> datetime:
+    """Parse a date string without extracting reminder text, allowing past dates."""
+    import pytz
+
+    # Clean text
+    text = text.strip()
+
+    # Get current time for smart inference
+    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+
+    # Handle "ayer" (yesterday)
+    if 'ayer' in text.lower():
+        return now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+
+    # Direct DD/MM or DD-MM pattern check first (most common case)
+    date_pattern = r'^(\d{1,2})[\/-](\d{1,2})$'
+    match = re.match(date_pattern, text)
+    if match:
+        day = int(match.group(1))
+        month = int(match.group(2))
+        return _smart_date_parse_with_past(day, month, now)
+
+    # Other patterns with simpler regex
+    smart_patterns = [
+        # "el lunes 29" or "lunes 29" (weekday + day)
+        (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(\d{1,2})\b', lambda m: _smart_weekday_day_parse_with_past(m.group(1), int(m.group(2)), now)),
+        # "el 20" (day of current month/year) - but not if it has / or -
+        (r'^\b(?:el\s+)?(\d{1,2})\b$', lambda m: _smart_day_parse_with_past(int(m.group(1)), now))
+    ]
+
+    for pattern, calc_func in smart_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            datetime_obj = calc_func(match)
+            if datetime_obj:
+                return datetime_obj
+
+    # Try with dateparser for natural language dates (allowing past)
+    # But use our custom settings that respect DD/MM format
+    parsed_date = dateparser.parse(text, settings={
+        'DATE_ORDER': 'DMY',
+        'PREFER_DAY_OF_MONTH': 'first',
+        'STRICT_PARSING': False,
+        'RETURN_AS_TIMEZONE_AWARE': True,
+        'TIMEZONE': 'America/Argentina/Buenos_Aires'
+    })
+
+    if parsed_date:
+        # If parsed but has no specific time, set to start of day
+        parsed_date = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Ensure the date has timezone
+        if parsed_date.tzinfo is None:
+            parsed_date = pytz.timezone('America/Argentina/Buenos_Aires').localize(parsed_date)
+
+        return parsed_date
+
+    return None
 
 def _parse_date_only(text: str) -> datetime:
     """Parse a date string without extracting reminder text."""
