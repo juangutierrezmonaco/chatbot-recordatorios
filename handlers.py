@@ -1635,6 +1635,66 @@ async def process_girlfriend_validation(update: Update, context: ContextTypes.DE
     # Clear the validation flag
     context.user_data.pop('pending_girlfriend_validation', None)
 
+async def fortune_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /fortuna command - romantic fortune messages for girlfriend."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    # Check if user has girlfriend mode activated
+    if not db.is_girlfriend(chat_id):
+        await update.message.reply_text(
+            "🔒 Este comando es especial y requiere activación.\n\n"
+            "Usá `/novia` para acceder a los comandos románticos 💕"
+        )
+        return
+
+    # Romantic fortune messages
+    # DEV NOTES: Modify this messages to be more personal
+    romantic_fortunes = [
+        "Hoy alguien que te ama piensa en vos más de lo normal 💕",
+        "Tu sonrisa va a iluminar el día de alguien especial ✨",
+        "Algo hermoso te espera hoy, y yo también 😘",
+        "El universo conspira para que tengás un día perfecto 🌟",
+        "Hoy vas a recibir una sorpresa de quien más te ama 💖",
+        "Tu felicidad es el regalo más lindo que existe 🎁",
+        "Alguien está pensando en abrazarte en este momento 🤗",
+        "Hoy es un día perfecto para ser la persona más linda del mundo 👑",
+        "Tu risa va a ser la melodía más bella de hoy 🎵",
+        "Algo mágico va a pasar hoy, y vos sos la magia ✨",
+        "El amor verdadero te rodea todo el tiempo 💕",
+        "Hoy vas a brillar más que las estrellas 🌟",
+        "Alguien te extraña muchísimo ahora mismo 💔💕",
+        "Tu corazón va a estar lleno de alegría hoy 💖",
+        "Hoy es el día perfecto para ser mimada 🥰",
+        "La suerte está de tu lado, especialmente en el amor 🍀💕",
+        "Algo dulce te espera al final del día 🍯",
+        "Tu belleza interior y exterior brillan hoy 💎",
+        "Alguien está escribiendo tu nombre en las estrellas ⭐",
+        "Hoy vas a hacer que alguien se sienta el más afortunado 🎰💕",
+        "El día tiene preparado algo especial para vos 🌈",
+        "Tu energía positiva va a contagiar a todos 🌞",
+        "Alguien cuenta los minutos hasta verte 🕐💕",
+        "Hoy vas a recibir todo el amor que merecés 💖",
+        "La vida te va a sorprender con algo hermoso 🌺",
+        "Tu presencia hace que todo sea mejor 💫",
+        "Hoy alguien va a decirte lo importante que sos 💕",
+        "El amor que das vuelve a vos multiplicado 💞",
+        "Hoy es tu día para brillar como la estrella que sos ⭐",
+        "Algo que esperás va a llegar pronto 🙏💕"
+    ]
+
+    # Select a random fortune
+    import random
+    selected_fortune = random.choice(romantic_fortunes)
+
+    # Send the fortune with romantic formatting
+    await update.message.reply_text(
+        f"🔮✨ **Tu Fortuna del Día** ✨🔮\n\n"
+        f"💕 {selected_fortune}\n\n"
+        f"🌟 _Con todo mi amor_ 🌟"
+    )
+
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Export all user data to PDF."""
     # Register or update user
