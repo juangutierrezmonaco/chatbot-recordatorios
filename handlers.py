@@ -1769,8 +1769,11 @@ async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_
     user_id = register_or_update_user(update)
     chat_id = update.effective_chat.id
 
+    logger.info(f"Upload surprise command called by chat_id: {chat_id}")
+
     # Check if user has admin mode activated
     if not db.is_admin(chat_id):
+        logger.warning(f"Non-admin user {chat_id} tried to use upload surprise command")
         await update.message.reply_text(
             "🔒 Este comando requiere privilegios de administrador.\n\n"
             "Usá `/admin` para acceder a los comandos de administración 🔧"
@@ -1778,6 +1781,7 @@ async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_
         return
 
     gallery_count = db.get_secret_gallery_count()
+    logger.info(f"Admin {chat_id} accessing upload surprise. Gallery count: {gallery_count}")
 
     await update.message.reply_text(
         f"📸 **Subir Sorpresa a Galería Secreta** 📸\n\n"
@@ -1788,6 +1792,7 @@ async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_
 
     # Mark this chat as waiting for photo upload
     context.user_data['waiting_for_surprise_upload'] = True
+    logger.info(f"Set waiting_for_surprise_upload flag for chat_id: {chat_id}")
 
 async def surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /sorpresa command - send random photo from secret gallery (girlfriend only)."""
@@ -1888,14 +1893,21 @@ async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_T
 
     chat_id = update.effective_chat.id
 
+    logger.info(f"Handle surprise upload called for chat_id: {chat_id}")
+    logger.info(f"waiting_for_surprise_upload flag: {context.user_data.get('waiting_for_surprise_upload')}")
+
     # Check if we're waiting for a surprise upload
     if not context.user_data.get('waiting_for_surprise_upload'):
+        logger.info(f"Not waiting for surprise upload from chat_id: {chat_id}")
         return False  # Not handling this message
 
     # Check admin privileges
     if not db.is_admin(chat_id):
+        logger.warning(f"Non-admin user {chat_id} tried to upload surprise")
         context.user_data.pop('waiting_for_surprise_upload', None)
         return False
+
+    logger.info(f"Processing surprise upload from admin {chat_id}")
 
     file_obj = None
     file_type = None
@@ -1903,17 +1915,22 @@ async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_T
     description = update.message.caption or ""
 
     # Determine file type and get file object
+    logger.info(f"Message content - Photo: {bool(update.message.photo)}, Document: {bool(update.message.document)}, Sticker: {bool(update.message.sticker)}")
+
     if update.message.photo:
+        logger.info(f"Processing photo upload")
         file_obj = await update.message.photo[-1].get_file()  # Get highest quality photo
         file_type = 'photo'
         file_extension = '.jpg'
         original_filename = f"photo_{uuid.uuid4().hex[:8]}.jpg"
     elif update.message.document:
+        logger.info(f"Processing document upload: {update.message.document.file_name}")
         file_obj = await update.message.document.get_file()
         file_type = 'document'
         original_filename = update.message.document.file_name or f"document_{uuid.uuid4().hex[:8]}"
         file_extension = Path(original_filename).suffix or '.bin'
     elif update.message.sticker:
+        logger.info(f"Processing sticker upload")
         file_obj = await update.message.sticker.get_file()
         file_type = 'sticker'
         file_extension = '.webp'
