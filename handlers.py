@@ -475,8 +475,16 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Check if the date is in the past to show all reminders (including sent/cancelled)
+    import pytz
+    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+    is_past_date = target_date.date() < now.date()
+
     # Get reminders for that date
-    reminders = db.get_date_reminders(chat_id, target_date)
+    if is_past_date:
+        reminders = db.get_all_date_reminders_including_past(chat_id, target_date)
+    else:
+        reminders = db.get_date_reminders(chat_id, target_date)
 
     # Format date for display
     formatted_date = target_date.strftime("%d/%m/%Y")
@@ -490,16 +498,46 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekday = weekday_spanish.get(weekday, weekday)
 
     if not reminders:
-        await update.message.reply_text(f"📅 No tienes recordatorios para el {weekday} {formatted_date}.")
+        past_indicator = "(incluyendo enviados/cancelados)" if is_past_date else ""
+        await update.message.reply_text(f"📅 No tienes recordatorios para el {weekday} {formatted_date} {past_indicator}.")
         return
 
-    message = f"📅 **Recordatorios para {weekday} {formatted_date}:**\n\n"
+    past_indicator = "📋 **Historial completo** - " if is_past_date else ""
+    message = f"📅 {past_indicator}**Recordatorios para {weekday} {formatted_date}:**\n\n"
 
     for reminder in reminders:
         # Show only time for same-day reminders
-        formatted_time = reminder['datetime'].strftime("%H:%M")
-        message += f"🔔 **#{reminder['id']}** - {formatted_time}\n"
-        message += f"   {reminder['text']}\n\n"
+        reminder_datetime = datetime.fromisoformat(reminder['datetime'])
+        formatted_time = reminder_datetime.strftime("%H:%M")
+
+        # Status indicators for past dates
+        if is_past_date and 'status' in reminder:
+            status_emoji = {
+                'active': '⏰',
+                'sent': '✅',
+                'cancelled': '❌',
+                'completed': '🏁'
+            }.get(reminder['status'], '🔔')
+        else:
+            status_emoji = '🔔'
+
+        # Important indicator
+        important_indicator = '🔥 ' if reminder.get('is_important') else ''
+
+        message += f"{status_emoji} {important_indicator}**#{reminder['id']}** - {formatted_time}\n"
+        message += f"   {reminder['text']}\n"
+
+        # Show status for past dates
+        if is_past_date and 'status' in reminder and reminder['status'] != 'active':
+            status_text = {
+                'sent': '(Enviado)',
+                'cancelled': '(Cancelado)',
+                'completed': '(Completado)'
+            }.get(reminder['status'], '')
+            if status_text:
+                message += f"   _{status_text}_\n"
+
+        message += "\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -1783,17 +1821,30 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❓ **¿Qué comando querés que te explique?**\n\n"
             "Uso: `/explicar <comando>`\n\n"
-            "Comandos disponibles:\n"
+            "**Comandos disponibles:**\n"
+            "• `start` - Mensaje de bienvenida\n"
             "• `recordar` - Crear recordatorios\n"
             "• `lista` - Ver recordatorios\n"
             "• `hoy` - Recordatorios de hoy\n"
             "• `semana` - Recordatorios de la semana\n"
             "• `dia` - Recordatorios de un día específico\n"
             "• `buscar` - Buscar recordatorios\n"
-            "• `importante` - Recordatorios importantes\n"
-            "• `repetir` - Duplicar recordatorios\n"
+            "• `historial` - Recordatorios pasados\n"
             "• `bitacora` - Notas personales\n"
-            "• `exportar` - Exportar datos\n\n"
+            "• `listarBitacora` - Ver todas las notas\n"
+            "• `buscarBitacora` - Buscar en notas\n"
+            "• `borrarBitacora` - Eliminar notas\n"
+            "• `historialBitacora` - Historial de notas\n"
+            "• `cancelar` - Cancelar recordatorios\n"
+            "• `importante` - Recordatorios importantes\n"
+            "• `completar` - Completar recordatorios importantes\n"
+            "• `repetir` - Duplicar recordatorios\n"
+            "• `exportar` - Exportar datos\n"
+            "• `novia` - Modo especial romântico\n"
+            "• `fortuna` - Fortuna del día\n"
+            "• `admin` - Modo administrador\n"
+            "• `subirSorpresa` - Subir fotos (admin)\n"
+            "• `sorpresa` - Recibir sorpresas\n\n"
             "**Ejemplo:** `/explicar recordar`"
         )
         return
@@ -1802,6 +1853,18 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Command explanations dictionary
     explanations = {
+        'start': {
+            'title': '🚀 **Comando /start**',
+            'description': 'Mensaje de bienvenida con instrucciones básicas',
+            'syntax': '`/start`',
+            'examples': ['/start'],
+            'features': [
+                '👋 Mensaje de bienvenida personalizado',
+                '📋 Lista de comandos principales',
+                '💡 Consejos de uso básicos',
+                '🔧 Información de configuración inicial'
+            ]
+        },
         'recordar': {
             'title': '📝 **Comando /recordar**',
             'description': 'Crea recordatorios con fechas y horarios flexibles',
@@ -1820,6 +1883,229 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '⚡ Fechas relativas (en 2 horas, pasado mañana)',
                 '🏷️ Categorización automática',
                 '🔔 Notificaciones puntuales'
+            ]
+        },
+        'hoy': {
+            'title': '📅 **Comando /hoy**',
+            'description': 'Muestra todos los recordatorios programados para hoy',
+            'syntax': '`/hoy`',
+            'examples': ['/hoy'],
+            'features': [
+                '📋 Lista de recordatorios del día actual',
+                '⏰ Ordenados por hora cronológicamente',
+                '🔥 Destaca recordatorios importantes',
+                '📊 Muestra pendientes y enviados',
+                '🕐 Formato de hora claro (HH:MM)'
+            ]
+        },
+        'semana': {
+            'title': '📊 **Comando /semana**',
+            'description': 'Muestra recordatorios de toda la semana organizados por día',
+            'syntax': '`/semana [pendientes]`',
+            'examples': [
+                '/semana - Ver toda la semana',
+                '/semana pendientes - Solo recordatorios activos'
+            ],
+            'features': [
+                '🗓️ Vista semanal completa',
+                '📅 Agrupado por día de la semana',
+                '🔍 Filtro opcional de solo pendientes',
+                '📈 Perfecto para planificación',
+                '🏷️ Incluye categorías y horarios'
+            ]
+        },
+        'buscar': {
+            'title': '🔍 **Comando /buscar**',
+            'description': 'Busca recordatorios por texto, categoría o contenido',
+            'syntax': '`/buscar <palabra o frase>`',
+            'examples': [
+                '/buscar medicina',
+                '/buscar reunión Juan',
+                '/buscar categoria:trabajo',
+                '/buscar #salud'
+            ],
+            'features': [
+                '🔤 Búsqueda de texto inteligente',
+                '🏷️ Búsqueda por categoría',
+                '📝 Búsqueda en contenido completo',
+                '✨ Ignora tildes y mayúsculas',
+                '📊 Resultados ordenados por relevancia'
+            ]
+        },
+        'historial': {
+            'title': '📚 **Comando /historial**',
+            'description': 'Muestra recordatorios pasados (enviados y cancelados)',
+            'syntax': '`/historial [límite]`',
+            'examples': [
+                '/historial - Últimos 20 recordatorios',
+                '/historial 50 - Últimos 50 recordatorios'
+            ],
+            'features': [
+                '📜 Historial completo de recordatorios',
+                '✅❌ Incluye enviados y cancelados',
+                '🔢 Límite configurable de resultados',
+                '📅 Ordenados por fecha descendente',
+                '🏷️ Muestra categoría y estado'
+            ]
+        },
+        'cancelar': {
+            'title': '❌ **Comando /cancelar**',
+            'description': 'Cancela recordatorios activos por ID',
+            'syntax': '`/cancelar <id> [id2] [id3]...`',
+            'examples': [
+                '/cancelar 123',
+                '/cancelar 456 789 321',
+                '/cancelar todos - Cancelar todos los recordatorios'
+            ],
+            'features': [
+                '🎯 Cancelación por ID específico',
+                '📋 Cancelación múltiple en un comando',
+                '🚫 Opción "todos" para limpiar todo',
+                '✅ Confirmación de cancelación',
+                '📊 Actualiza estadísticas automáticamente'
+            ]
+        },
+        'completar': {
+            'title': '🏁 **Comando /completar**',
+            'description': 'Detiene la repetición de recordatorios importantes',
+            'syntax': '`/completar <id>`',
+            'examples': ['/completar 123'],
+            'features': [
+                '🔥 Específico para recordatorios importantes',
+                '⏹️ Detiene repetición automática',
+                '✅ Marca como completado',
+                '📊 Libera recursos del scheduler',
+                '🎯 Acción definitiva e irreversible'
+            ]
+        },
+        'listaBitacora': {
+            'title': '📖 **Comando /listarBitacora**',
+            'description': 'Muestra todas las notas de tu bitácora personal',
+            'syntax': '`/listarBitacora [límite]`',
+            'examples': [
+                '/listarBitacora',
+                '/listarBitacora 20'
+            ],
+            'features': [
+                '📋 Lista completa de notas',
+                '📅 Ordenadas por fecha de creación',
+                '🏷️ Muestra categorías automáticas',
+                '🔢 Límite configurable',
+                '🆔 IDs para referencia y eliminación'
+            ]
+        },
+        'buscarBitacora': {
+            'title': '🔍 **Comando /buscarBitacora**',
+            'description': 'Busca en tus notas personales por texto o categoría',
+            'syntax': '`/buscarBitacora <término>`',
+            'examples': [
+                '/buscarBitacora dinero',
+                '/buscarBitacora categoria:lugares',
+                '/buscarBitacora Juan restaurante'
+            ],
+            'features': [
+                '🔤 Búsqueda inteligente de texto',
+                '🏷️ Filtrado por categoría',
+                '✨ Ignora tildes y mayúsculas',
+                '📊 Resultados con contexto',
+                '📝 Resaltado de términos encontrados'
+            ]
+        },
+        'borrarBitacora': {
+            'title': '🗑️ **Comando /borrarBitacora**',
+            'description': 'Elimina notas de la bitácora por ID',
+            'syntax': '`/borrarBitacora <id> [id2] [id3]...`',
+            'examples': [
+                '/borrarBitacora 45',
+                '/borrarBitacora 12 34 56'
+            ],
+            'features': [
+                '🎯 Eliminación por ID específico',
+                '📋 Eliminación múltiple',
+                '✅ Confirmación de eliminación',
+                '🔄 Soft delete (se puede recuperar)',
+                '📊 Actualiza contadores automáticamente'
+            ]
+        },
+        'historialBitacora': {
+            'title': '📚 **Comando /historialBitacora**',
+            'description': 'Muestra historial completo de la bitácora incluyendo eliminadas',
+            'syntax': '`/historialBitacora [límite]`',
+            'examples': [
+                '/historialBitacora',
+                '/historialBitacora 30'
+            ],
+            'features': [
+                '📜 Historial completo con eliminadas',
+                '👻 Muestra notas borradas',
+                '📅 Cronológico completo',
+                '🔍 Útil para recuperar información',
+                '📊 Estado de cada nota'
+            ]
+        },
+        'novia': {
+            'title': '💕 **Comando /novia**',
+            'description': 'Activa modo especial romántico con validación',
+            'syntax': '`/novia`',
+            'examples': ['/novia'],
+            'features': [
+                '💖 Modo especial para parejas',
+                '🔐 Validación con frases románticas',
+                '🎁 Desbloquea comando /sorpresa',
+                '🌹 Acceso a fortuna romántica',
+                '✨ Experiencia personalizada'
+            ]
+        },
+        'fortuna': {
+            'title': '🔮 **Comando /fortuna**',
+            'description': 'Fortuna diaria romántica (requiere modo novia)',
+            'syntax': '`/fortuna`',
+            'examples': ['/fortuna'],
+            'features': [
+                '🌹 30 mensajes románticos únicos',
+                '💕 Personalizado para parejas',
+                '🎲 Selección aleatoria diaria',
+                '✨ Mensajes motivacionales de amor',
+                '🔐 Solo disponible en modo novia'
+            ]
+        },
+        'admin': {
+            'title': '🔧 **Comando /admin**',
+            'description': 'Activa modo administrador con privilegios especiales',
+            'syntax': '`/admin`',
+            'examples': ['/admin'],
+            'features': [
+                '🔐 Activación con contraseña',
+                '👑 Privilegios de administrador',
+                '📸 Acceso a subir sorpresas',
+                '📊 Información de debug',
+                '⚙️ Comandos administrativos'
+            ]
+        },
+        'subirSorpresa': {
+            'title': '📸 **Comando /subirSorpresa**',
+            'description': 'Sube fotos a la galería secreta (solo admins)',
+            'syntax': '`/subirSorpresa` + enviar archivo',
+            'examples': ['/subirSorpresa'],
+            'features': [
+                '📱 Soporta fotos, documentos y stickers',
+                '💾 Almacenamiento local seguro',
+                '📝 Descripciones opcionales',
+                '🔐 Solo para administradores',
+                '🎯 Para uso con /sorpresa'
+            ]
+        },
+        'sorpresa': {
+            'title': '🎁 **Comando /sorpresa**',
+            'description': 'Recibe una sorpresa aleatoria de la galería (solo novia)',
+            'syntax': '`/sorpresa`',
+            'examples': ['/sorpresa'],
+            'features': [
+                '🎲 Selección aleatoria de galería',
+                '📸 Fotos, memes y stickers',
+                '💕 Solo para modo novia activado',
+                '✨ Sorpresas románticas',
+                '🔄 Contenido siempre fresco'
             ]
         },
         'importante': {
@@ -1927,6 +2213,26 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         }
     }
+
+    # Handle aliases
+    command_aliases = {
+        'listarbitacora': 'listaBitacora',
+        'buscarbitacora': 'buscarBitacora',
+        'borrarbitacora': 'borrarBitacora',
+        'historialbitacora': 'historialBitacora',
+        'subirsorpresa': 'subirSorpresa',
+        # Additional aliases for all commands
+        'listar_bitacora': 'listaBitacora',
+        'buscar_bitacora': 'buscarBitacora',
+        'borrar_bitacora': 'borrarBitacora',
+        'historial_bitacora': 'historialBitacora',
+        'subir_sorpresa': 'subirSorpresa',
+        'lista_bitacora': 'listaBitacora'
+    }
+
+    # Check if it's an alias
+    if command in command_aliases:
+        command = command_aliases[command]
 
     if command in explanations:
         exp = explanations[command]

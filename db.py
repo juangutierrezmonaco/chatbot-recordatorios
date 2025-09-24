@@ -1228,3 +1228,42 @@ def get_reminder_by_id(chat_id: int, reminder_id: int) -> dict:
         }
 
     return None
+
+def get_all_date_reminders_including_past(chat_id: int, target_date: datetime) -> List[Dict]:
+    """Get ALL reminders for a specific date, including sent and cancelled ones."""
+    import pytz
+
+    # Ensure target_date has timezone info
+    if target_date.tzinfo is None:
+        timezone = pytz.timezone('America/Argentina/Buenos_Aires')
+        target_date = timezone.localize(target_date)
+
+    # Get date range for the target day
+    day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, datetime, status, category, is_important, repeat_interval
+        FROM reminders
+        WHERE chat_id = ?
+        AND datetime >= ? AND datetime <= ?
+        ORDER BY datetime
+    ''', (chat_id, day_start.isoformat(), day_end.isoformat()))
+
+    reminders = []
+    for row in cursor.fetchall():
+        reminders.append({
+            'id': row[0],
+            'text': row[1],
+            'datetime': row[2],
+            'status': row[3],
+            'category': row[4],
+            'is_important': bool(row[5]) if row[5] is not None else False,
+            'repeat_interval': row[6]
+        })
+
+    conn.close()
+    return reminders
