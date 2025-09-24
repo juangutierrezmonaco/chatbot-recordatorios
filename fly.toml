@@ -1,0 +1,30 @@
+# fly.toml app configuration file generated for chatbot-recordatorios
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "chatbot-recordatorios"
+primary_region = "scl"
+
+[build]
+
+[env]
+  PYTHONUNBUFFERED = "1"
+
+[[mounts]]
+  source = "chatbot_data"
+  destination = "/app/database"
+
+[[mounts]]
+  source = "chatbot_exports"
+  destination = "/app/exports"
+
+[[mounts]]
+  source = "chatbot_gallery"
+  destination = "/app/secret_gallery"
+
+[processes]
+  app = "python bot.py"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

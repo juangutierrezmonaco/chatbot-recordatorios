@@ -166,3 +166,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Fly.io deployment files
+.fly/

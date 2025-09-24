@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.pytest_cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# Local development
+.env
+.venv
+venv/
+ENV/
+
+# Database files (will be created in container)
+database/
+*.db
+
+# Export files (will be created in container)
+exports/
+*.txt
+
+# Secret gallery (will be created in container)
+secret_gallery/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation and examples
+README.md
+EXAMPLES.md
+TECHNICAL_DOCS.md
+
+# Temp files
+*.tmp

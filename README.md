@@ -2,30 +2,35 @@
 
 Un bot de Telegram inteligente que te permite crear recordatorios usando comandos o lenguaje natural en español.
 
-## 🚀 Deploy Gratis en Render (Recomendado)
+## 🚀 Deploy Gratis en Fly.io (Recomendado)
 
-**¡La forma más fácil de tener tu bot funcionando 24/7 gratis!**
+**¡La mejor opción gratuita para bots de Telegram 24/7!**
 
-1. **Fork este repositorio en tu GitHub**
+Ver guía completa en: [`deploy-fly.md`](deploy-fly.md)
 
-2. **Ve a [render.com](https://render.com) y crea una cuenta**
+**Pasos rápidos:**
+1. Instalar Fly CLI: `curl -L https://fly.io/install.sh | sh`
+2. Crear cuenta: `fly auth signup`
+3. Crear app: `fly apps create chatbot-recordatorios`
+4. Crear volúmenes: `fly volumes create chatbot_data --region scl --size 1`
+5. Configurar token: `fly secrets set TELEGRAM_TOKEN="tu_token"`
+6. Deploy: `fly deploy`
 
-3. **Conecta tu repositorio:**
-   - Click en "New +" → "Web Service"
-   - Conecta tu repo de GitHub
-   - Render detectará automáticamente que es una app Python
+**✅ Ventajas de Fly.io:**
+- 🆓 **Completamente gratis**: 3 apps, 160GB-hour/mes
+- 🚫 **No se duerme**: Funciona 24/7 sin problemas de puerto
+- 💾 **Persistente**: Base de datos y archivos se mantienen
+- 🔄 **Auto-redeploy**: `git push` + `fly deploy`
 
-4. **Configura las variables de entorno:**
-   - `TELEGRAM_TOKEN`: Tu token de Telegram
-   - `OPENAI_API_KEY`: (Opcional) Para mensajes de voz
+---
 
-5. **¡Deploy automático!** Render creará y ejecutará tu bot
+## 🔄 Alternativa: Render (Limitaciones)
 
-**✅ Ventajas de Render:**
-- 🆓 **Gratis**: 750 horas/mes (suficiente para 24/7)
-- 🔄 **Auto-deploy**: Se actualiza con cada git push
-- 📊 **Logs**: Para monitorear tu bot
-- 💾 **SQLite**: Tu base de datos funciona sin cambios
+⚠️ **Nota**: Render gratis solo funciona para Web Services, no para bots de Telegram con polling. Los Background Workers son de pago.
+
+**Si querés probar Render igual:**
+- Necesitarás el plan pago para Background Workers
+- O modificar el bot para usar webhooks en lugar de polling
 
 ---
 
