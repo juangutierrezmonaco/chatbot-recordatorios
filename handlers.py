@@ -1692,6 +1692,263 @@ async def complete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"❌ No se encontró un recordatorio importante activo con ID #{reminder_id}.")
 
+async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /repetir command to duplicate an existing reminder."""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Uso: /repetir <id> [nueva fecha/hora]\n\n"
+            "Ejemplos:\n"
+            "• /repetir 123 mañana a las 10\n"
+            "• /repetir 456 25/12 a las 15:30\n"
+            "• /repetir 789 el viernes\n\n"
+            "Si no especificás fecha, usará la fecha original."
+        )
+        return
+
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    try:
+        reminder_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ El ID debe ser un número válido.")
+        return
+
+    # Get the original reminder
+    original_reminder = db.get_reminder_by_id(chat_id, reminder_id)
+
+    if not original_reminder:
+        await update.message.reply_text(
+            f"❌ No se encontró un recordatorio con ID {reminder_id}.\n\n"
+            "Usá `/lista` para ver tus recordatorios disponibles."
+        )
+        return
+
+    # Parse new date/time if provided
+    new_datetime = None
+    if len(context.args) > 1:
+        date_time_text = ' '.join(context.args[1:])
+        new_datetime, _ = extract_date_and_text(f"recordar {date_time_text} {original_reminder['text']}")
+
+        if not new_datetime:
+            await update.message.reply_text(
+                f"❌ No pude entender la fecha/hora: \"{date_time_text}\"\n\n"
+                "Ejemplos válidos:\n"
+                "• mañana a las 10\n"
+                "• 25/12 a las 15:30\n"
+                "• el viernes a las 9"
+            )
+            return
+    else:
+        # Use original datetime if no new one provided
+        new_datetime = datetime.fromisoformat(original_reminder['datetime'])
+
+    # Create the duplicate reminder
+    new_reminder_id = db.add_reminder(
+        chat_id=chat_id,
+        text=original_reminder['text'],
+        datetime_str=new_datetime.isoformat(),
+        category=original_reminder['category'],
+        is_important=original_reminder['is_important'],
+        repeat_interval=original_reminder['repeat_interval']
+    )
+
+    if new_reminder_id:
+        # Schedule the new reminder
+        import scheduler
+        scheduler.schedule_reminder(context.job_queue, new_reminder_id, new_datetime, chat_id, original_reminder['text'])
+
+        # Format response
+        formatted_datetime = new_datetime.strftime("%d/%m/%Y a las %H:%M")
+
+        await update.message.reply_text(
+            f"✅ **Recordatorio duplicado exitosamente**\n\n"
+            f"🆔 **Nuevo ID:** {new_reminder_id}\n"
+            f"📝 **Texto:** {original_reminder['text']}\n"
+            f"📅 **Fecha y hora:** {formatted_datetime}\n"
+            f"📂 **Categoría:** {original_reminder['category']}\n"
+            f"{'🔥 **Importante:** Sí' if original_reminder['is_important'] else ''}\n\n"
+            f"🔄 Basado en el recordatorio original #{reminder_id}"
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Error al crear el recordatorio duplicado.\n\n"
+            "Intentá de nuevo o contactá al administrador."
+        )
+
+async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /explicar command to provide detailed command explanations and examples."""
+    if not context.args:
+        await update.message.reply_text(
+            "❓ **¿Qué comando querés que te explique?**\n\n"
+            "Uso: `/explicar <comando>`\n\n"
+            "Comandos disponibles:\n"
+            "• `recordar` - Crear recordatorios\n"
+            "• `lista` - Ver recordatorios\n"
+            "• `hoy` - Recordatorios de hoy\n"
+            "• `semana` - Recordatorios de la semana\n"
+            "• `dia` - Recordatorios de un día específico\n"
+            "• `buscar` - Buscar recordatorios\n"
+            "• `importante` - Recordatorios importantes\n"
+            "• `repetir` - Duplicar recordatorios\n"
+            "• `bitacora` - Notas personales\n"
+            "• `exportar` - Exportar datos\n\n"
+            "**Ejemplo:** `/explicar recordar`"
+        )
+        return
+
+    command = context.args[0].lower().replace('/', '')
+
+    # Command explanations dictionary
+    explanations = {
+        'recordar': {
+            'title': '📝 **Comando /recordar**',
+            'description': 'Crea recordatorios con fechas y horarios flexibles',
+            'syntax': '`/recordar <fecha/hora> <texto>`',
+            'examples': [
+                '/recordar mañana a las 10 reunión con Juan',
+                '/recordar el viernes a las 15:30 llamar al médico',
+                '/recordar 25/12 a las 9 feliz navidad!',
+                '/recordar en 2 horas tomar medicamento',
+                '/recordar el lunes que viene presentación',
+                '/recordar pasado mañana comprar regalo'
+            ],
+            'features': [
+                '🕐 Horarios inteligentes (AM/PM automático)',
+                '📅 Fechas flexibles (mañana, viernes, 25/12)',
+                '⚡ Fechas relativas (en 2 horas, pasado mañana)',
+                '🏷️ Categorización automática',
+                '🔔 Notificaciones puntuales'
+            ]
+        },
+        'importante': {
+            'title': '🔥 **Comando /importante**',
+            'description': 'Crea recordatorios que se repiten cada X minutos hasta completarlos',
+            'syntax': '`/importante <intervalo> <fecha/hora> <texto>`',
+            'examples': [
+                '/importante 15 mañana a las 9 tomar vitaminas',
+                '/importante 30 hoy a las 14 llamar a mamá',
+                '/importante 5 en 1 hora medicamento urgente',
+                '/importante 60 el viernes entregar informe'
+            ],
+            'features': [
+                '🔁 Se repite automáticamente cada X minutos',
+                '⏰ No para hasta que uses `/completar`',
+                '🚨 Ideal para cosas críticas/urgentes',
+                '💊 Perfecto para medicamentos',
+                '📱 Persiste hasta ser completado'
+            ]
+        },
+        'lista': {
+            'title': '📋 **Comando /lista**',
+            'description': 'Muestra todos tus recordatorios organizados por categorías',
+            'syntax': '`/lista [filtro]`',
+            'examples': [
+                '/lista - Ver todos los recordatorios',
+                '/lista trabajo - Solo recordatorios de trabajo',
+                '/lista personal - Solo recordatorios personales',
+                '/lista salud - Solo recordatorios de salud'
+            ],
+            'features': [
+                '🏷️ Agrupados por categoría automática',
+                '🆔 Muestra ID para usar con otros comandos',
+                '📅 Ordenados por fecha y hora',
+                '🔍 Filtrado por categoría opcional',
+                '⚡ Muestra recordatorios importantes'
+            ]
+        },
+        'dia': {
+            'title': '📅 **Comando /dia**',
+            'description': 'Ve recordatorios de cualquier día específico (pasado, presente o futuro)',
+            'syntax': '`/dia <fecha>`',
+            'examples': [
+                '/dia mañana',
+                '/dia ayer',
+                '/dia 22/09',
+                '/dia el viernes',
+                '/dia 25/12/2024'
+            ],
+            'features': [
+                '📅 Fechas pasadas, presentes y futuras',
+                '🗓️ Formatos flexibles (DD/MM, día de semana)',
+                '⏰ Muestra horarios completos',
+                '📝 Incluye descripciones completas'
+            ]
+        },
+        'repetir': {
+            'title': '🔄 **Comando /repetir**',
+            'description': 'Duplica un recordatorio existente con nueva fecha/hora',
+            'syntax': '`/repetir <id> [nueva fecha/hora]`',
+            'examples': [
+                '/repetir 123 mañana a las 10',
+                '/repetir 456 el próximo viernes',
+                '/repetir 789 - (usa fecha original)'
+            ],
+            'features': [
+                '📋 Copia texto y configuración completa',
+                '📅 Nueva fecha/hora personalizable',
+                '🏷️ Mantiene categoría original',
+                '🔥 Preserva tipo importante si aplica'
+            ]
+        },
+        'bitacora': {
+            'title': '📖 **Sistema de Bitácora**',
+            'description': 'Guarda notas y pensamientos para consultar después',
+            'syntax': 'Texto natural o comandos específicos',
+            'examples': [
+                'anotá que Juan me debe $500',
+                'nota que la reunión fue productiva',
+                '/bitacora hoy fue un buen día',
+                '/listarBitacora',
+                '/buscarBitacora dinero'
+            ],
+            'features': [
+                '📝 Detección automática de notas',
+                '🏷️ Categorización inteligente',
+                '🔍 Búsqueda por texto',
+                '📋 Listado cronológico',
+                '🗑️ Eliminación por ID'
+            ]
+        },
+        'exportar': {
+            'title': '📄 **Comando /exportar**',
+            'description': 'Exporta todos tus datos a PDF profesional',
+            'syntax': '`/exportar [completo]`',
+            'examples': [
+                '/exportar - Recordatorios pendientes',
+                '/exportar completo - Todo el historial'
+            ],
+            'features': [
+                '📊 Resumen estadístico detallado',
+                '📝 Recordatorios organizados por categoría',
+                '📖 Bitácora con fechas',
+                '🎨 Formato profesional PDF'
+            ]
+        }
+    }
+
+    if command in explanations:
+        exp = explanations[command]
+
+        examples_text = '\n'.join([f"• `{ex}`" for ex in exp['examples']])
+        features_text = '\n'.join(exp['features'])
+
+        message = (
+            f"{exp['title']}\n\n"
+            f"**Descripción:** {exp['description']}\n\n"
+            f"**Sintaxis:** {exp['syntax']}\n\n"
+            f"**Ejemplos:**\n{examples_text}\n\n"
+            f"**Características:**\n{features_text}"
+        )
+
+        await update.message.reply_text(message, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(
+            f"❌ No conozco el comando `{command}`\n\n"
+            "Usá `/explicar` sin parámetros para ver la lista de comandos disponibles."
+        )
+
 async def girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /novia command to activate girlfriend mode."""
     # Register or update user

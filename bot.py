@@ -62,6 +62,8 @@ def main():
         application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
         application.add_handler(CommandHandler("importante", handlers.important_command))
         application.add_handler(CommandHandler("completar", handlers.complete_command))
+        application.add_handler(CommandHandler("repetir", handlers.repeat_command))
+        application.add_handler(CommandHandler("explicar", handlers.explain_command))
         application.add_handler(CommandHandler("novia", handlers.girlfriend_command))
         application.add_handler(CommandHandler("fortuna", handlers.fortune_command))
         application.add_handler(CommandHandler("admin", handlers.admin_command))

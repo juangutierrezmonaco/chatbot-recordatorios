@@ -1199,3 +1199,32 @@ def mark_photo_invalid(photo_id: int) -> bool:
         logger.info(f"Marked secret photo {photo_id} as invalid")
 
     return success
+
+def get_reminder_by_id(chat_id: int, reminder_id: int) -> dict:
+    """Get a specific reminder by ID and chat_id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, datetime, created_at, category, is_important,
+               repeat_interval, last_sent
+        FROM reminders
+        WHERE id = ? AND chat_id = ?
+    ''', (reminder_id, chat_id))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            'id': row[0],
+            'text': row[1],
+            'datetime': row[2],
+            'created_at': row[3],
+            'category': row[4],
+            'is_important': bool(row[5]) if row[5] is not None else False,
+            'repeat_interval': row[6],
+            'last_sent': row[7]
+        }
+
+    return None
