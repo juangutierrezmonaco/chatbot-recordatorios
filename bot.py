@@ -78,6 +78,12 @@ def main():
             handlers.voice_message_handler
         ))
 
+        # Handler for photos, documents, and stickers (for surprise upload)
+        application.add_handler(MessageHandler(
+            filters.PHOTO | filters.Document.ALL | filters.Sticker.ALL,
+            handlers.handle_surprise_upload
+        ))
+
         # Handler for free messages (natural language)
         application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
