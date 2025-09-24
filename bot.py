@@ -101,7 +101,11 @@ def main():
         print("📋 Presiona Ctrl+C para detener")
 
         # Start the bot
-        application.run_polling(allowed_updates=['message'])
+        application.run_polling(
+            allowed_updates=['message'],
+            drop_pending_updates=True,
+            close_loop=False
+        )
 
     except InvalidToken:
         logger.error("❌ Invalid Telegram token")
