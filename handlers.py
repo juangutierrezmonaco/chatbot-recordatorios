@@ -799,6 +799,11 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await process_girlfriend_validation(update, context)
         return
 
+    # Check if we're waiting for admin validation
+    if context.user_data.get('pending_admin_validation'):
+        await process_admin_validation(update, context)
+        return
+
     text = update.message.text.lower()
 
     # Check if it's a reminder attempt
@@ -1694,6 +1699,63 @@ async def fortune_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💕 {selected_fortune}\n\n"
         f"🌟 _Con todo mi amor_ 🌟"
     )
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /admin command to activate admin mode."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    # Check if already activated
+    if db.is_admin(chat_id):
+        await update.message.reply_text(
+            "🔧 Ya tenés el modo administrador activado.\n\n"
+            "Comandos de admin disponibles:\n"
+            "• `/subir_sorpresa` - Subir foto para galería secreta"
+        )
+        return
+
+    # Ask for admin password
+    await update.message.reply_text(
+        "🔐 **Acceso de Administrador**\n\n"
+        "Ingresá la contraseña de administrador:"
+    )
+
+    # Mark this chat as pending admin validation
+    context.user_data['pending_admin_validation'] = True
+
+def validate_admin_password(password: str) -> bool:
+    """Check if the admin password is correct."""
+    return password.strip() == "admin6143"
+
+async def process_admin_validation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Process admin validation password."""
+    chat_id = update.effective_chat.id
+    user_password = update.message.text
+
+    if validate_admin_password(user_password):
+        # Correct password! Activate admin mode
+        success = db.set_admin_mode(chat_id)
+
+        if success:
+            await update.message.reply_text(
+                "🔧✅ **Modo Administrador Activado** ✅🔧\n\n"
+                "🎛️ Comandos de administrador disponibles:\n"
+                "• `/subir_sorpresa` - Subir foto/meme para galería secreta\n"
+                "• Más comandos de admin próximamente...\n\n"
+                "🔒 Acceso total concedido"
+            )
+        else:
+            await update.message.reply_text("❌ Error activando el modo administrador. Intenta de nuevo.")
+    else:
+        # Incorrect password
+        await update.message.reply_text(
+            "❌ **Contraseña incorrecta**\n\n"
+            "🔒 Acceso denegado. Intenta nuevamente con `/admin`"
+        )
+
+    # Clear the validation flag
+    context.user_data.pop('pending_admin_validation', None)
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Export all user data to PDF."""

@@ -1066,3 +1066,39 @@ def is_girlfriend(chat_id: int) -> bool:
     conn.close()
 
     return result is not None
+
+def set_admin_mode(chat_id: int) -> bool:
+    """Activate admin mode for a specific chat_id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE users
+        SET is_admin = TRUE, admin_activated_at = ?
+        WHERE chat_id = ?
+    ''', (datetime.now().isoformat(), chat_id))
+
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    if success:
+        logger.info(f"Admin mode activated for chat {chat_id}")
+
+    return success
+
+def is_admin(chat_id: int) -> bool:
+    """Check if chat_id has admin mode activated."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT is_admin
+        FROM users
+        WHERE chat_id = ? AND is_admin = TRUE
+    ''', (chat_id,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    return result is not None
