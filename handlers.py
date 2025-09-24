@@ -1498,8 +1498,24 @@ def extract_date_and_text(text: str):
 
                 return datetime_obj, clean_text
 
+    # Helper function to convert Spanish number words to digits
+    def spanish_word_to_number(word):
+        word_numbers = {
+            'una': 1, 'un': 1, 'uno': 1,
+            'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5,
+            'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9,
+            'diez': 10, 'media': 0.5
+        }
+        return word_numbers.get(word.lower())
+
     # Relative time patterns
     relative_patterns = [
+        # Spanish number words for relative time
+        (r'en\s+(una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media)\s*h(?:oras?)?',
+         lambda m: now + timedelta(hours=spanish_word_to_number(m.group(1)))),
+        (r'en\s+(una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media)\s*m(?:in)?(?:utos?)?',
+         lambda m: now + timedelta(minutes=spanish_word_to_number(m.group(1)))),
+        # Numeric patterns
         (r'en\s+(\d+)\s*m(?:in)?(?:utos?)?', lambda m: now + timedelta(minutes=int(m.group(1)))),
         (r'en\s+(\d+)\s*h(?:oras?)?', lambda m: now + timedelta(hours=int(m.group(1)))),
         (r'en\s+(\d+)\s*d(?:ias?)?', lambda m: now + timedelta(days=int(m.group(1))))
@@ -1767,7 +1783,9 @@ async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_datetime = None
     if len(context.args) > 1:
         date_time_text = ' '.join(context.args[1:])
-        new_datetime, _ = extract_date_and_text(f"recordar {date_time_text} {original_reminder['text']}")
+        # Create a temporary text to parse just the datetime part
+        temp_text = f"recordar {date_time_text} placeholder"
+        new_datetime, _ = extract_date_and_text(temp_text)
 
         if not new_datetime:
             await update.message.reply_text(
@@ -1775,7 +1793,9 @@ async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Ejemplos válidos:\n"
                 "• mañana a las 10\n"
                 "• 25/12 a las 15:30\n"
-                "• el viernes a las 9"
+                "• el viernes a las 9\n"
+                "• en 1 hora\n"
+                "• en 30 minutos"
             )
             return
     else:
@@ -1783,19 +1803,34 @@ async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_datetime = datetime.fromisoformat(original_reminder['datetime'])
 
     # Create the duplicate reminder
-    new_reminder_id = db.add_reminder(
-        chat_id=chat_id,
-        text=original_reminder['text'],
-        datetime_str=new_datetime.isoformat(),
-        category=original_reminder['category'],
-        is_important=original_reminder['is_important'],
-        repeat_interval=original_reminder['repeat_interval']
-    )
+    if original_reminder['is_important']:
+        new_reminder_id = db.add_important_reminder(
+            chat_id=chat_id,
+            text=original_reminder['text'],
+            datetime_obj=new_datetime,
+            category=original_reminder['category'],
+            repeat_interval=original_reminder['repeat_interval'] or 5
+        )
+    else:
+        new_reminder_id = db.add_reminder(
+            chat_id=chat_id,
+            text=original_reminder['text'],
+            datetime_obj=new_datetime,
+            category=original_reminder['category']
+        )
 
     if new_reminder_id:
         # Schedule the new reminder
         import scheduler
-        scheduler.schedule_reminder(context.job_queue, new_reminder_id, new_datetime, chat_id, original_reminder['text'])
+        if original_reminder['is_important']:
+            scheduler.schedule_important_reminder(
+                new_reminder_id,
+                new_datetime,
+                original_reminder['repeat_interval'] or 5,
+                context.bot
+            )
+        else:
+            scheduler.schedule_reminder(context.bot, chat_id, new_reminder_id, original_reminder['text'], new_datetime)
 
         # Format response
         formatted_datetime = new_datetime.strftime("%d/%m/%Y a las %H:%M")
