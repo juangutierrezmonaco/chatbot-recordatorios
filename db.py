@@ -1104,21 +1104,21 @@ def is_admin(chat_id: int) -> bool:
     return result is not None
 
 # Secret gallery functions
-def add_secret_photo(file_id: str, file_type: str, uploaded_by: int, original_filename: str = None, description: str = None) -> int:
-    """Add a photo/meme to the secret gallery."""
+def add_secret_photo(local_file_path: str, file_type: str, uploaded_by: int, original_filename: str = None, description: str = None) -> int:
+    """Add a photo/meme to the secret gallery using local file storage."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        INSERT INTO secret_gallery (file_id, file_type, original_filename, description, uploaded_by)
+        INSERT INTO secret_gallery (local_file_path, file_type, original_filename, description, uploaded_by)
         VALUES (?, ?, ?, ?, ?)
-    ''', (file_id, file_type, original_filename, description, uploaded_by))
+    ''', (local_file_path, file_type, original_filename, description, uploaded_by))
 
     photo_id = cursor.lastrowid
     conn.commit()
     conn.close()
 
-    logger.info(f"Added secret photo {photo_id} to gallery by admin {uploaded_by}")
+    logger.info(f"Added secret photo {photo_id} to gallery by admin {uploaded_by}: {local_file_path}")
     return photo_id
 
 def get_random_secret_photo() -> dict:
@@ -1127,9 +1127,9 @@ def get_random_secret_photo() -> dict:
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, file_id, file_type, original_filename, description
+        SELECT id, local_file_path, file_type, original_filename, description
         FROM secret_gallery
-        WHERE is_active = TRUE
+        WHERE is_active = TRUE AND local_file_path IS NOT NULL
         ORDER BY RANDOM()
         LIMIT 1
     ''')
@@ -1140,7 +1140,7 @@ def get_random_secret_photo() -> dict:
     if row:
         return {
             'id': row[0],
-            'file_id': row[1],
+            'local_file_path': row[1],
             'file_type': row[2],
             'original_filename': row[3],
             'description': row[4]
@@ -1153,7 +1153,7 @@ def get_secret_gallery_count() -> int:
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT COUNT(*) FROM secret_gallery WHERE is_active = TRUE
+        SELECT COUNT(*) FROM secret_gallery WHERE is_active = TRUE AND local_file_path IS NOT NULL
     ''')
 
     count = cursor.fetchone()[0]

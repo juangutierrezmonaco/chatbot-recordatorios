@@ -1813,85 +1813,79 @@ async def surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Try to send the photo, with retry logic for invalid file_ids
-    max_retries = 3
-    retry_count = 0
+    # Send the photo from local file
+    try:
+        import os
 
-    while retry_count < max_retries:
-        try:
-            if random_photo['file_type'] == 'photo':
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=random_photo['file_id'],
-                    caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                           f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
-                )
-            elif random_photo['file_type'] == 'document':
-                await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=random_photo['file_id'],
-                    caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                           f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
-                )
-            elif random_photo['file_type'] == 'sticker':
-                await context.bot.send_sticker(
-                    chat_id=chat_id,
-                    sticker=random_photo['file_id']
-                )
-                await update.message.reply_text(
-                    f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                    f"💕 {random_photo['description'] or 'Un sticker especial para vos'} 💕"
-                )
+        local_file_path = random_photo['local_file_path']
+
+        # Check if file exists
+        if not os.path.exists(local_file_path):
+            logger.error(f"Local file not found: {local_file_path}")
+            # Mark as invalid and try to get another photo
+            db.mark_photo_invalid(random_photo['id'])
+
+            # Try to get another photo
+            another_photo = db.get_random_secret_photo()
+            if another_photo and os.path.exists(another_photo['local_file_path']):
+                random_photo = another_photo
+                local_file_path = random_photo['local_file_path']
             else:
-                # Fallback for other file types
                 await update.message.reply_text(
-                    f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
-                    f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
-                )
-
-            # Success! Break the retry loop
-            break
-
-        except Exception as e:
-            error_msg = str(e).lower()
-
-            # Check if it's a file_id error
-            if "wrong remote file identifier" in error_msg or "file_id" in error_msg:
-                logger.warning(f"Invalid file_id for photo {random_photo['id']}: {e}")
-
-                # Mark this photo as invalid
-                db.mark_photo_invalid(random_photo['id'])
-
-                # Try to get another random photo
-                retry_count += 1
-                if retry_count < max_retries:
-                    random_photo = db.get_random_secret_photo()
-                    if not random_photo:
-                        await update.message.reply_text(
-                            "😔 La galería secreta está vacía por ahora...\n\n"
-                            "¡Pero pronto habrá sorpresas esperándote! 💕✨"
-                        )
-                        return
-                    logger.info(f"Retrying with new photo (attempt {retry_count + 1})")
-                    continue
-                else:
-                    # Max retries reached
-                    await update.message.reply_text(
-                        "😅 Hubo un problemita con las sorpresas guardadas...\n\n"
-                        "¡Pero el amor está ahí! Pedí al admin que suba nuevas fotos 💕"
-                    )
-                    return
-            else:
-                # Other error - don't retry
-                logger.error(f"Error sending surprise photo: {e}")
-                await update.message.reply_text(
-                    "😅 Hubo un problemita enviando la sorpresa...\n\n"
-                    "¡Pero el amor está ahí! Intenta de nuevo 💕"
+                    "😔 No hay sorpresas disponibles por ahora...\n\n"
+                    "¡Pedí al admin que suba nuevas fotos! 💕✨"
                 )
                 return
 
+        caption = (f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                  f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕")
+
+        if random_photo['file_type'] == 'photo':
+            with open(local_file_path, 'rb') as photo_file:
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo_file,
+                    caption=caption
+                )
+        elif random_photo['file_type'] == 'document':
+            with open(local_file_path, 'rb') as doc_file:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=doc_file,
+                    caption=caption,
+                    filename=random_photo['original_filename']
+                )
+        elif random_photo['file_type'] == 'sticker':
+            with open(local_file_path, 'rb') as sticker_file:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=sticker_file,
+                    filename=random_photo['original_filename']
+                )
+                await update.message.reply_text(caption)
+        else:
+            # Fallback for other file types
+            with open(local_file_path, 'rb') as file:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=file,
+                    caption=caption,
+                    filename=random_photo['original_filename']
+                )
+
+    except Exception as e:
+        logger.error(f"Error sending surprise photo from local file: {e}")
+        await update.message.reply_text(
+            "😅 Hubo un problemita enviando la sorpresa...\n\n"
+            "¡Pero el amor está ahí! Intenta de nuevo 💕"
+        )
+
 async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photo/document uploads for secret gallery when admin is in upload mode."""
+    import os
+    import uuid
+    from pathlib import Path
+
     chat_id = update.effective_chat.id
 
     # Check if we're waiting for a surprise upload
@@ -1903,46 +1897,68 @@ async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop('waiting_for_surprise_upload', None)
         return False
 
-    file_id = None
+    file_obj = None
     file_type = None
     original_filename = None
     description = update.message.caption or ""
 
-    # Determine file type and extract file_id
+    # Determine file type and get file object
     if update.message.photo:
-        file_id = update.message.photo[-1].file_id  # Get highest quality photo
+        file_obj = await update.message.photo[-1].get_file()  # Get highest quality photo
         file_type = 'photo'
+        file_extension = '.jpg'
+        original_filename = f"photo_{uuid.uuid4().hex[:8]}.jpg"
     elif update.message.document:
-        file_id = update.message.document.file_id
+        file_obj = await update.message.document.get_file()
         file_type = 'document'
-        original_filename = update.message.document.file_name
+        original_filename = update.message.document.file_name or f"document_{uuid.uuid4().hex[:8]}"
+        file_extension = Path(original_filename).suffix or '.bin'
     elif update.message.sticker:
-        file_id = update.message.sticker.file_id
+        file_obj = await update.message.sticker.get_file()
         file_type = 'sticker'
+        file_extension = '.webp'
+        original_filename = f"sticker_{uuid.uuid4().hex[:8]}.webp"
 
-    if file_id:
-        # Add to secret gallery
-        photo_id = db.add_secret_photo(
-            file_id=file_id,
-            file_type=file_type,
-            uploaded_by=chat_id,
-            original_filename=original_filename,
-            description=description
-        )
+    if file_obj:
+        try:
+            # Create unique filename
+            unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+            local_file_path = os.path.join("secret_gallery", unique_filename)
 
-        gallery_count = db.get_secret_gallery_count()
+            # Download and save file locally
+            await file_obj.download_to_drive(local_file_path)
 
-        await update.message.reply_text(
-            f"✅ **Sorpresa agregada a la galería secreta!** ✅\n\n"
-            f"🆔 ID de sorpresa: #{photo_id}\n"
-            f"📊 Total en galería: {gallery_count} sorpresas\n"
-            f"📝 Descripción: {description or 'Sin descripción'}\n\n"
-            f"🎁 ¡Ya está lista para sorprender! 💕"
-        )
+            # Add to secret gallery database
+            photo_id = db.add_secret_photo(
+                local_file_path=local_file_path,
+                file_type=file_type,
+                uploaded_by=chat_id,
+                original_filename=original_filename,
+                description=description
+            )
 
-        # Clear the upload waiting flag
-        context.user_data.pop('waiting_for_surprise_upload', None)
-        return True
+            gallery_count = db.get_secret_gallery_count()
+
+            await update.message.reply_text(
+                f"✅ **Sorpresa agregada a la galería secreta!** ✅\n\n"
+                f"🆔 ID de sorpresa: #{photo_id}\n"
+                f"📊 Total en galería: {gallery_count} sorpresas\n"
+                f"📝 Descripción: {description or 'Sin descripción'}\n"
+                f"📁 Archivo guardado: {original_filename}\n\n"
+                f"🎁 ¡Ya está lista para sorprender! 💕"
+            )
+
+            # Clear the upload waiting flag
+            context.user_data.pop('waiting_for_surprise_upload', None)
+            return True
+
+        except Exception as e:
+            logger.error(f"Error downloading/saving surprise file: {e}")
+            await update.message.reply_text(
+                "❌ Error guardando el archivo.\n\n"
+                "Intentá de nuevo o contactá al administrador."
+            )
+            return True
 
     else:
         await update.message.reply_text(
