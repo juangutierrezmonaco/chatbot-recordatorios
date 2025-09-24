@@ -1,5 +1,5 @@
 # Variables de entorno y configuración sensible
-.env
+*.env
 .env.local
 .env.*.local
 
@@ -7,7 +7,7 @@
 *.db
 *.sqlite
 *.sqlite3
-recordatorios.db
+database/
 
 # Secret gallery - user uploaded content
 secret_gallery/

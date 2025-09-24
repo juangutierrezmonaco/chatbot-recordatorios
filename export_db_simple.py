@@ -7,15 +7,20 @@ import os
 def export_database_to_txt():
     """Export complete database to simple TXT format - only showing data that exists."""
 
-    db_path = 'recordatorios.db'
+    db_path = 'database/reminders.db'
     if not os.path.exists(db_path):
-        print("❌ No se encontró la base de datos recordatorios.db")
+        print("❌ No se encontró la base de datos database/reminders.db")
         return
-
-    output_file = 'exports/database_export.txt'
 
     # Create exports directory if it doesn't exist
     os.makedirs('exports', exist_ok=True)
+
+    # Find next available number for export
+    export_number = 1
+    while os.path.exists(f'exports/{export_number}.txt'):
+        export_number += 1
+
+    output_file = f'exports/{export_number}.txt'
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("=" * 80 + "\n")

@@ -140,19 +140,25 @@ El lunes 29 a las 15 recordame pedir el pedal
 
 ```
 chatbot-recordatorios/
-├── bot.py           # Punto de entrada principal
-├── handlers.py      # Lógica de comandos y parsing
-├── scheduler.py     # Gestión de recordatorios programados
-├── db.py           # Funciones de base de datos
-├── requirements.txt # Dependencias
-├── .env            # Variables de entorno (no se commitea)
-├── .gitignore      # Archivos a ignorar por git
-└── README.md       # Este archivo
+├── bot.py              # Punto de entrada principal
+├── handlers.py         # Lógica de comandos y parsing
+├── scheduler.py        # Gestión de recordatorios programados
+├── db.py              # Funciones de base de datos
+├── migrations.py      # Sistema de migraciones
+├── database/          # Bases de datos (no se commitean)
+│   ├── reminders.db   # Base de datos principal
+│   └── recordatorios.db # Base de datos legacy
+├── exports/           # Exportaciones de datos (no se commitean)
+├── migrations/        # Archivos de migración SQL
+├── requirements.txt   # Dependencias
+├── .env              # Variables de entorno (no se commitea)
+├── .gitignore        # Archivos a ignorar por git
+└── README.md         # Este archivo
 ```
 
 ## 💾 Base de datos
 
-El bot usa SQLite para persistir los recordatorios. La base de datos (`recordatorios.db`) se crea automáticamente al ejecutar el bot por primera vez.
+El bot usa SQLite para persistir los recordatorios. La base de datos se almacena en `database/reminders.db` y se crea automáticamente al ejecutar el bot por primera vez.
 
 ## 🕰️ Zona horaria
 

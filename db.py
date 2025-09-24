@@ -7,7 +7,7 @@ from migrations import MigrationManager
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "reminders.db"
+DB_PATH = "database/reminders.db"
 
 def init_db():
     """Initialize the database and run migrations."""
