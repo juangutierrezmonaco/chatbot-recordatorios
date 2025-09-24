@@ -1029,3 +1029,40 @@ def get_active_important_reminders() -> List[Dict]:
         reminders.append(reminder)
 
     return reminders
+
+# Special girlfriend mode functions
+def set_girlfriend_mode(chat_id: int) -> bool:
+    """Activate girlfriend mode for a specific chat_id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE users
+        SET is_girlfriend = TRUE, girlfriend_activated_at = ?
+        WHERE chat_id = ?
+    ''', (datetime.now().isoformat(), chat_id))
+
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    if success:
+        logger.info(f"Girlfriend mode activated for chat {chat_id}")
+
+    return success
+
+def is_girlfriend(chat_id: int) -> bool:
+    """Check if chat_id has girlfriend mode activated."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT is_girlfriend
+        FROM users
+        WHERE chat_id = ? AND is_girlfriend = TRUE
+    ''', (chat_id,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    return result is not None

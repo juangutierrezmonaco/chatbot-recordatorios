@@ -794,6 +794,11 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Register or update user
     register_or_update_user(update)
 
+    # Check if we're waiting for girlfriend validation
+    if context.user_data.get('pending_girlfriend_validation'):
+        await process_girlfriend_validation(update, context)
+        return
+
     text = update.message.text.lower()
 
     # Check if it's a reminder attempt
@@ -1550,6 +1555,85 @@ async def complete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scheduler.cancel_reminder(reminder_id)
     else:
         await update.message.reply_text(f"❌ No se encontró un recordatorio importante activo con ID #{reminder_id}.")
+
+async def girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /novia command to activate girlfriend mode."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    # Check if already activated
+    if db.is_girlfriend(chat_id):
+        await update.message.reply_text(
+            "💕 Ya tenés el modo especial activado, mi amor! ✨\n\n"
+            "Podés usar todos los comandos románticos 🥰"
+        )
+        return
+
+    # Ask the secret question
+    await update.message.reply_text(
+        "Para activar el modo especial, necesito que me digas algo...\n\n"
+        "🎵 **Frase que más se me viene a la cabeza cuando te abrazo** (pedacito de canción):"
+    )
+
+    # We'll handle the answer in the free_message handler
+    # Mark this chat as pending girlfriend validation
+    context.user_data['pending_girlfriend_validation'] = True
+
+def normalize_girlfriend_answer(text: str) -> str:
+    """Normalize text for girlfriend validation - lowercase and remove accents."""
+    if not text:
+        return ""
+
+    # Convert to lowercase
+    normalized = text.lower()
+
+    # Remove accents/diacritics using unicodedata
+    normalized = unicodedata.normalize('NFD', normalized)
+    normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+
+    return normalized
+
+def validate_girlfriend_answer(text: str) -> bool:
+    """Check if the answer contains the required romantic phrase."""
+    normalized_text = normalize_girlfriend_answer(text)
+
+    # Required words from "oh mi amor estás maravillosa hoy"
+    required_words = ['oh', 'mi', 'amor', 'estas', 'maravillosa', 'hoy']
+
+    # Check if all required words are present (order doesn't matter)
+    return all(word in normalized_text for word in required_words)
+
+async def process_girlfriend_validation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Process girlfriend validation answer."""
+    chat_id = update.effective_chat.id
+    user_text = update.message.text
+
+    if validate_girlfriend_answer(user_text):
+        # Correct answer! Activate girlfriend mode
+        success = db.set_girlfriend_mode(chat_id)
+
+        if success:
+            await update.message.reply_text(
+                "🥰KEASHEEEEE\n\n"
+                "Hola culo 💕\n\n"
+                "🌟 Ahora tenés acceso a comandos especiales:\n"
+                "• `/fortuna` - Tu fortuna del día\n"
+                "• `/sorpresa` - Una sorpresita\n\n"
+                "Te amo muchísimo"
+            )
+        else:
+            await update.message.reply_text("❌ Hubo un error activando el modo especial. Intenta de nuevo.")
+    else:
+        # Incorrect answer
+        await update.message.reply_text(
+            "💔 Mmm, no es exactamente lo que esperaba...\n\n"
+            "💭 Pensá en esa frase que cantamos juntos cuando nos abrazamos 🎵\n\n"
+            "Intentá de nuevo con `/novia` 💕"
+        )
+
+    # Clear the validation flag
+    context.user_data.pop('pending_girlfriend_validation', None)
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Export all user data to PDF."""

@@ -65,6 +65,7 @@ def main():
         application.add_handler(CommandHandler("cancelar", handlers.cancel_command))
         application.add_handler(CommandHandler("importante", handlers.important_command))
         application.add_handler(CommandHandler("completar", handlers.complete_command))
+        application.add_handler(CommandHandler("novia", handlers.girlfriend_command))
         application.add_handler(CommandHandler("exportar", handlers.export_command))
 
         # Handler for voice messages
