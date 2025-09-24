@@ -987,6 +987,11 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    # Check if it's a bitácora list request using "tirar data" or "tirame la data"
+    elif any(phrase in text for phrase in ['tirar data', 'tirame la data', 'tirame data']):
+        # Call the vault list function
+        await vault_list_command(update, context)
+        return
 
     # Check if it's a reminder
     elif any(keyword in text for keyword in keywords):
@@ -1903,21 +1908,22 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'recordar': {
             'title': '📝 **Comando /recordar**',
             'description': 'Crea recordatorios con fechas y horarios flexibles',
-            'syntax': '`/recordar <fecha/hora> <texto>`',
+            'syntax': '`/recordar <fecha/hora> <texto>` o lenguaje natural',
             'examples': [
                 '/recordar mañana a las 10 reunión con Juan',
-                '/recordar el viernes a las 15:30 llamar al médico',
-                '/recordar 25/12 a las 9 feliz navidad!',
-                '/recordar en 2 horas tomar medicamento',
-                '/recordar el lunes que viene presentación',
-                '/recordar pasado mañana comprar regalo'
+                '/recordar en una hora tomar medicamento',
+                'mañana a las 2 recordame que tengo turno médico',
+                'recordame en 45 minutos sacar la pizza',
+                'haceme acordar el viernes comprar cerveza',
+                'avisame pasado mañana llamar a mamá'
             ],
             'features': [
+                '🗣️ **Lenguaje natural**: recordame, haceme acordar, avisame, aviso',
                 '🕐 Horarios inteligentes (AM/PM automático)',
                 '📅 Fechas flexibles (mañana, viernes, 25/12)',
-                '⚡ Fechas relativas (en 2 horas, pasado mañana)',
-                '🏷️ Categorización automática',
-                '🔔 Notificaciones puntuales'
+                '⚡ Fechas relativas (en una hora, en 30 minutos)',
+                '🏷️ Categorización automática inteligente',
+                '🔔 Notificaciones puntuales y precisas'
             ]
         },
         'hoy': {
@@ -2026,19 +2032,24 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '📅 Ordenadas por fecha de creación',
                 '🏷️ Muestra categorías automáticas',
                 '🔢 Límite configurable',
-                '🆔 IDs para referencia y eliminación'
+                '🆔 IDs para referencia y eliminación',
+                '🗣️ **Lenguaje natural**: tirar data, tirame la data, tirame data'
             ]
         },
         'buscarBitacora': {
             'title': '🔍 **Comando /buscarBitacora**',
             'description': 'Busca en tus notas personales por texto o categoría',
-            'syntax': '`/buscarBitacora <término>`',
+            'syntax': '`/buscarBitacora <término>` o lenguaje natural',
             'examples': [
                 '/buscarBitacora dinero',
                 '/buscarBitacora categoria:lugares',
-                '/buscarBitacora Juan restaurante'
+                '/buscarBitacora Juan restaurante',
+                'averigua vino',
+                'averiguá categoria:bares',
+                'averigua sobre Cindy'
             ],
             'features': [
+                '🗣️ **Lenguaje natural**: averigua, averiguá',
                 '🔤 Búsqueda inteligente de texto',
                 '🏷️ Filtrado por categoría',
                 '✨ Ignora tildes y mayúsculas',
@@ -2220,16 +2231,18 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'examples': [
                 'anotá que Juan me debe $500',
                 'nota que la reunión fue productiva',
-                '/bitacora hoy fue un buen día',
-                '/listarBitacora',
-                '/buscarBitacora dinero'
+                'recordar que el bar tiene buena música',
+                'apuntar que Pedro recomendó el libro',
+                'guardar que no me gustó la película',
+                'acordarme que Cindy prefiere los Sugus rosas',
+                '/bitacora hoy fue un buen día'
             ],
             'features': [
-                '📝 Detección automática de notas',
-                '🏷️ Categorización inteligente',
-                '🔍 Búsqueda por texto',
-                '📋 Listado cronológico',
-                '🗑️ Eliminación por ID'
+                '📝 **Términos naturales**: anotá, nota que, recordar que, apuntar que, guardar que, acordarme que',
+                '🏷️ Categorización automática inteligente',
+                '🔍 Búsqueda con "averigua" o comandos',
+                '📋 Listado cronológico completo',
+                '🗑️ Eliminación por ID con recuperación'
             ]
         },
         'exportar': {

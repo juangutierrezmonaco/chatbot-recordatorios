@@ -92,6 +92,10 @@ python3 bot.py
 - `/borrarBitacora <id>` - Eliminar notas
 - `/historialBitacora` - Historial completo
 
+**Lenguaje natural para bitácora:**
+- "Tirar data" o "tirame la data" - Mostrar todas las notas
+- "Averigua [término]" - Buscar en notas
+
 ### 💕 **Funciones Especiales:**
 - `/novia` - Modo romántico con validación
 - `/fortuna` - Fortuna diaria romántica
