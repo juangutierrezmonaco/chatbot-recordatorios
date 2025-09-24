@@ -1102,3 +1102,80 @@ def is_admin(chat_id: int) -> bool:
     conn.close()
 
     return result is not None
+
+# Secret gallery functions
+def add_secret_photo(file_id: str, file_type: str, uploaded_by: int, original_filename: str = None, description: str = None) -> int:
+    """Add a photo/meme to the secret gallery."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        INSERT INTO secret_gallery (file_id, file_type, original_filename, description, uploaded_by)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (file_id, file_type, original_filename, description, uploaded_by))
+
+    photo_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Added secret photo {photo_id} to gallery by admin {uploaded_by}")
+    return photo_id
+
+def get_random_secret_photo() -> dict:
+    """Get a random active photo from the secret gallery."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, file_id, file_type, original_filename, description
+        FROM secret_gallery
+        WHERE is_active = TRUE
+        ORDER BY RANDOM()
+        LIMIT 1
+    ''')
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            'id': row[0],
+            'file_id': row[1],
+            'file_type': row[2],
+            'original_filename': row[3],
+            'description': row[4]
+        }
+    return None
+
+def get_secret_gallery_count() -> int:
+    """Get the total number of active photos in the secret gallery."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT COUNT(*) FROM secret_gallery WHERE is_active = TRUE
+    ''')
+
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def delete_secret_photo(photo_id: int, admin_chat_id: int) -> bool:
+    """Soft delete a photo from the secret gallery (admin only)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE secret_gallery
+        SET is_active = FALSE
+        WHERE id = ? AND uploaded_by = ?
+    ''', (photo_id, admin_chat_id))
+
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    if success:
+        logger.info(f"Admin {admin_chat_id} deleted secret photo {photo_id}")
+
+    return success

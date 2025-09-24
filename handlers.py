@@ -804,6 +804,12 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await process_admin_validation(update, context)
         return
 
+    # Check if we're waiting for surprise upload (admin photo upload)
+    if context.user_data.get('waiting_for_surprise_upload'):
+        handled = await handle_surprise_upload(update, context)
+        if handled:
+            return
+
     text = update.message.text.lower()
 
     # Check if it's a reminder attempt
@@ -1756,6 +1762,156 @@ async def process_admin_validation(update: Update, context: ContextTypes.DEFAULT
 
     # Clear the validation flag
     context.user_data.pop('pending_admin_validation', None)
+
+async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /subir_sorpresa command - upload photos for secret gallery (admin only)."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    # Check if user has admin mode activated
+    if not db.is_admin(chat_id):
+        await update.message.reply_text(
+            "🔒 Este comando requiere privilegios de administrador.\n\n"
+            "Usá `/admin` para acceder a los comandos de administración 🔧"
+        )
+        return
+
+    gallery_count = db.get_secret_gallery_count()
+
+    await update.message.reply_text(
+        f"📸 **Subir Sorpresa a Galería Secreta** 📸\n\n"
+        f"📊 Fotos actuales en galería: {gallery_count}\n\n"
+        f"📤 Enviá una foto, meme, sticker o documento y se agregará automáticamente a la galería secreta.\n\n"
+        f"💡 También podés incluir una descripción opcional escribiendo texto junto con la imagen."
+    )
+
+    # Mark this chat as waiting for photo upload
+    context.user_data['waiting_for_surprise_upload'] = True
+
+async def surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /sorpresa command - send random photo from secret gallery (girlfriend only)."""
+    # Register or update user
+    user_id = register_or_update_user(update)
+    chat_id = update.effective_chat.id
+
+    # Check if user has girlfriend mode activated
+    if not db.is_girlfriend(chat_id):
+        await update.message.reply_text(
+            "🔒 Este comando es especial y requiere activación.\n\n"
+            "Usá `/novia` para acceder a los comandos románticos 💕"
+        )
+        return
+
+    # Get a random photo from the gallery
+    random_photo = db.get_random_secret_photo()
+
+    if not random_photo:
+        await update.message.reply_text(
+            "😔 La galería secreta está vacía por ahora...\n\n"
+            "¡Pero pronto habrá sorpresas esperándote! 💕✨"
+        )
+        return
+
+    # Send the photo based on its type
+    try:
+        if random_photo['file_type'] == 'photo':
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=random_photo['file_id'],
+                caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                       f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
+            )
+        elif random_photo['file_type'] == 'document':
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=random_photo['file_id'],
+                caption=f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                       f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
+            )
+        elif random_photo['file_type'] == 'sticker':
+            await context.bot.send_sticker(
+                chat_id=chat_id,
+                sticker=random_photo['file_id']
+            )
+            await update.message.reply_text(
+                f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                f"💕 {random_photo['description'] or 'Un sticker especial para vos'} 💕"
+            )
+        else:
+            # Fallback for other file types
+            await update.message.reply_text(
+                f"🎁✨ **¡Sorpresa!** ✨🎁\n\n"
+                f"💕 {random_photo['description'] or 'Una sorpresita especial para vos'} 💕"
+            )
+
+    except Exception as e:
+        logger.error(f"Error sending surprise photo: {e}")
+        await update.message.reply_text(
+            "😅 Hubo un problemita enviando la sorpresa...\n\n"
+            "¡Pero el amor está ahí! Intenta de nuevo 💕"
+        )
+
+async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo/document uploads for secret gallery when admin is in upload mode."""
+    chat_id = update.effective_chat.id
+
+    # Check if we're waiting for a surprise upload
+    if not context.user_data.get('waiting_for_surprise_upload'):
+        return False  # Not handling this message
+
+    # Check admin privileges
+    if not db.is_admin(chat_id):
+        context.user_data.pop('waiting_for_surprise_upload', None)
+        return False
+
+    file_id = None
+    file_type = None
+    original_filename = None
+    description = update.message.caption or ""
+
+    # Determine file type and extract file_id
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id  # Get highest quality photo
+        file_type = 'photo'
+    elif update.message.document:
+        file_id = update.message.document.file_id
+        file_type = 'document'
+        original_filename = update.message.document.file_name
+    elif update.message.sticker:
+        file_id = update.message.sticker.file_id
+        file_type = 'sticker'
+
+    if file_id:
+        # Add to secret gallery
+        photo_id = db.add_secret_photo(
+            file_id=file_id,
+            file_type=file_type,
+            uploaded_by=chat_id,
+            original_filename=original_filename,
+            description=description
+        )
+
+        gallery_count = db.get_secret_gallery_count()
+
+        await update.message.reply_text(
+            f"✅ **Sorpresa agregada a la galería secreta!** ✅\n\n"
+            f"🆔 ID de sorpresa: #{photo_id}\n"
+            f"📊 Total en galería: {gallery_count} sorpresas\n"
+            f"📝 Descripción: {description or 'Sin descripción'}\n\n"
+            f"🎁 ¡Ya está lista para sorprender! 💕"
+        )
+
+        # Clear the upload waiting flag
+        context.user_data.pop('waiting_for_surprise_upload', None)
+        return True
+
+    else:
+        await update.message.reply_text(
+            "❌ Por favor enviá una foto, documento o sticker.\n\n"
+            "📱 Tipos soportados: fotos, documentos, stickers"
+        )
+        return True  # We handled it, but it was invalid
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Export all user data to PDF."""
