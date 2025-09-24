@@ -12,6 +12,9 @@ recordatorios.db
 # Secret gallery - user uploaded content
 secret_gallery/
 
+# Database exports - contains personal data
+exports/
+
 # Python
 __pycache__/
 *.py[cod]
