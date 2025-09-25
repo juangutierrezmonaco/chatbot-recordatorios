@@ -2409,13 +2409,13 @@ async def process_girlfriend_validation(update: Update, context: ContextTypes.DE
     context.user_data.pop('pending_girlfriend_validation', None)
 
 async def fortune_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /fortuna command - romantic fortune messages for girlfriend."""
+    """Handle the /fortuna command - romantic fortune messages for girlfriend or admin."""
     # Register or update user
     user_id = register_or_update_user(update)
     chat_id = update.effective_chat.id
 
-    # Check if user has girlfriend mode activated
-    if not db.is_girlfriend(chat_id):
+    # Check if user has girlfriend mode activated OR is admin
+    if not (db.is_girlfriend(chat_id) or db.is_admin(chat_id)):
         await update.message.reply_text(
             "🔒 Este comando es especial y requiere activación.\n\n"
             "Usá `/novia` para acceder a los comandos románticos 💕"
@@ -2564,13 +2564,13 @@ async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_
     logger.info(f"Set waiting_for_surprise_upload flag for chat_id: {chat_id}")
 
 async def surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /sorpresa command - send random photo from secret gallery (girlfriend only)."""
+    """Handle the /sorpresa command - send random photo from secret gallery (girlfriend or admin)."""
     # Register or update user
     user_id = register_or_update_user(update)
     chat_id = update.effective_chat.id
 
-    # Check if user has girlfriend mode activated
-    if not db.is_girlfriend(chat_id):
+    # Check if user has girlfriend mode activated OR is admin
+    if not (db.is_girlfriend(chat_id) or db.is_admin(chat_id)):
         await update.message.reply_text(
             "🔒 Este comando es especial y requiere activación.\n\n"
             "Usá `/novia` para acceder a los comandos románticos 💕"
