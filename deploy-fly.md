@@ -122,3 +122,97 @@ fly scale memory 512
 - Los volúmenes persisten tu base de datos y archivos
 - Las variables de entorno se manejan con `fly secrets`
 - El bot se mantiene corriendo 24/7 sin necesidad de webhooks
+
+---
+
+## 🔄 Workflow de desarrollo y deploy
+
+### **Después del deploy inicial, ¿cómo seguir?**
+
+**✅ Workflow recomendado:**
+
+1. **Hacer cambios localmente**
+   ```bash
+   # Editás tu código normalmente
+   # Probás localmente con: python bot.py
+   ```
+
+2. **Commitear cambios**
+   ```bash
+   git add -A
+   git commit -m "descripción de cambios"
+   ```
+
+3. **Pushear a GitHub** *(opcional pero recomendado)*
+   ```bash
+   git push origin master
+   ```
+
+4. **Deploy a Fly.io**
+   ```bash
+   fly deploy
+   ```
+
+### **¿Se actualiza automáticamente?**
+
+❌ **No hay auto-deploy automático** como en Render
+✅ **Tenés control total**: deployás cuando quieras
+
+### **¿Puedo pushear tranquilo a GitHub?**
+
+✅ **Sí, pushear a GitHub NO afecta Fly.io**
+- GitHub y Fly.io son independientes
+- Podés pushear cambios sin deployar
+- Solo se actualiza cuando hacés `fly deploy`
+
+### **¿Cuándo hacer deploy?**
+
+🔹 **Después de probar localmente**
+🔹 **Cuando quieras actualizar el bot en producción**
+🔹 **NO hay límite de deploys** (plan gratuito)
+
+### **Ejemplo de workflow típico:**
+
+```bash
+# 1. Hacer cambios
+vim handlers.py
+
+# 2. Probar localmente
+python bot.py
+
+# 3. Commitear
+git add handlers.py
+git commit -m "add new feature X"
+
+# 4. (Opcional) Push a GitHub para backup
+git push origin master
+
+# 5. Deploy cuando estés listo
+fly deploy
+
+# 6. Monitorear logs
+fly logs
+```
+
+### **⚡ Deploy rápido**
+
+Si hacés cambios frecuentes y querés deployar rápido:
+
+```bash
+# Todo en una línea
+git add -A && git commit -m "quick fix" && fly deploy
+```
+
+### **🚨 Si algo sale mal**
+
+```bash
+# Ver logs del deploy
+fly logs
+
+# Hacer rollback al deploy anterior
+fly releases list
+fly rollback <version_anterior>
+
+# Reiniciar la app
+fly restart
+```

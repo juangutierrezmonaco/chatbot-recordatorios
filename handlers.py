@@ -158,54 +158,69 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_or_update_user(update)
 
     message = """
-🤖 ¡Hola! Soy tu bot de recordatorios personal.
+🤖 **¡Hola! Soy tu asistente personal inteligente**
 
-📝 **Cómo usarme:**
+Manejo tres funcionalidades principales:
 
-**Comandos:**
-/recordar <fecha/hora> <texto> - Crear recordatorio
-/lista - Ver recordatorios activos
-/hoy - Ver recordatorios de hoy
-/semana [todos] - Ver recordatorios pendientes de esta semana
-/dia <fecha> - Ver recordatorios de fecha específica
-/buscar <palabra> - Buscar recordatorios
-/historial - Ver recordatorios pasados
-/bitacora <texto> - Guardar nota en la bitácora
-/listarBitacora - Ver todas las notas de la bitácora
-/buscarBitacora <palabra> - Buscar en la bitácora
-/borrarBitacora <id|todos> - Eliminar nota(s) de la bitácora
-/historialBitacora - Ver historial de entradas eliminadas
-/cancelar <id> - Cancelar recordatorio
-/importante [intervalo] <fecha/hora> <texto> - Recordatorio que se repite
-/completar <id> - Completar recordatorio importante
-/exportar [completo] - Exportar todos los datos a PDF
+═══════════════════════════════════════════════
+📅 **A) RECORDATORIOS**
+═══════════════════════════════════════════════
 
-**Ejemplos de comandos:**
-• `/recordar mañana 18:00 comprar comida`
-• `/recordar en 30m apagar el horno`
-• `/recordar 2025-09-20 09:30 reunión con Juan`
-• `/semana` - Ver solo recordatorios pendientes
-• `/semana todos` - Ver todos los recordatorios
-• `/exportar` - Exportar solo datos activos
-• `/exportar completo` - Exportar incluyendo historial
-• `/importante 10 mañana 9:00 ir al médico` (cada 10 min)
-• `/importante lunes 15:00 reunión` (cada 5 min por defecto)
-• `/completar 123` - Parar repetición del recordatorio #123
-• `/bitacora No me gustó el vino en Bar Central`
-• `/bitacora Si voy a La Parolaccia, pedir ravioles al pesto`
+**Comandos principales:**
+• `/recordar <fecha/hora> <texto>` - Crear recordatorio
+• `/lista` - Ver recordatorios activos
+• `/hoy` - Ver recordatorios de hoy
+• `/semana [todos]` - Vista semanal completa
+• `/buscar <término>` - Buscar recordatorios
+• `/cancelar <id>` - Cancelar recordatorio
+
+**Recordatorios importantes (se repiten):**
+• `/importante [intervalo] <fecha> <texto>` - Crear
+• `/completar <id>` - Finalizar repetición
 
 **Lenguaje natural:**
-También puedes escribir directamente:
-• "Mañana a las 2 recordame que tengo turno médico"
+• "Mañana a las 2 recordame el turno médico"
 • "En 45 minutos recordame sacar la pizza"
-• "El viernes a las 18hs haceme acordar de comprar cerveza"
 
-**Mensajes de voz:** 🎙️
-¡Envía mensajes de voz y los transcribiré automáticamente!
-• "Recordame mañana comprar leche"
-• "Nota que no me gustó el restaurante X"
+═══════════════════════════════════════════════
+📖 **B) BITÁCORA PERSONAL**
+═══════════════════════════════════════════════
 
-¡Empezá a crear tus recordatorios! 🎯
+**Comandos principales:**
+• `/bitacora <texto>` - Guardar nota personal
+• `/listarBitacora` - Ver todas las notas
+• `/buscarBitacora <término>` - Buscar en notas
+• `/borrarBitacora <id>` - Eliminar nota
+
+**Lenguaje natural:**
+• "Anotá que no me gustó el restaurant X"
+• "Tirar data" / "Tirame la data" - Ver notas
+• "Averigua vino" - Buscar término
+
+═══════════════════════════════════════════════
+🔐 **C) AUTENTICACIÓN Y ESPECIALES**
+═══════════════════════════════════════════════
+
+• `/novia` - Activar modo romántico especial
+• `/admin` - Activar modo administrador
+• `/fortuna` - Fortuna diaria romántica
+• `/sorpresa` - Recibir contenido aleatorio
+• `/exportar` - Exportar todos los datos a PDF
+
+═══════════════════════════════════════════════
+🎙️ **MENSAJES DE VOZ**
+═══════════════════════════════════════════════
+
+¡Envía audio y lo transcribiré automáticamente!
+
+═══════════════════════════════════════════════
+📋 **AYUDA DETALLADA**
+═══════════════════════════════════════════════
+
+• `/explicar` - Lista completa de comandos
+• `/explicar <comando>` - Ayuda específica
+
+¡Empezá a usar tu asistente personal! 🚀
     """
 
     await update.message.reply_text(message)
@@ -1859,33 +1874,44 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explicar command to provide detailed command explanations and examples."""
     if not context.args:
         await update.message.reply_text(
-            "❓ **¿Qué comando querés que te explique?**\n\n"
-            "Uso: `/explicar <comando>`\n\n"
-            "**Comandos disponibles:**\n"
-            "• `start` - Mensaje de bienvenida\n"
+            "❓ **Lista completa de comandos disponibles**\n\n"
+            "**Uso:** `/explicar <comando>` para ayuda detallada\n\n"
+
+            "═══════════════════════════════════════\n"
+            "📅 **RECORDATORIOS**\n"
+            "═══════════════════════════════════════\n"
             "• `recordar` - Crear recordatorios\n"
-            "• `lista` - Ver recordatorios\n"
+            "• `lista` - Ver recordatorios activos\n"
             "• `hoy` - Recordatorios de hoy\n"
-            "• `semana` - Recordatorios de la semana\n"
-            "• `dia` - Recordatorios de un día específico\n"
+            "• `semana` - Vista semanal completa\n"
+            "• `dia` - Recordatorios de fecha específica\n"
             "• `buscar` - Buscar recordatorios\n"
             "• `historial` - Recordatorios pasados\n"
-            "• `bitacora` - Notas personales\n"
+            "• `cancelar` - Cancelar recordatorios\n"
+            "• `importante` - Recordatorios que se repiten\n"
+            "• `completar` - Finalizar recordatorio importante\n"
+            "• `repetir` - Duplicar recordatorios\n\n"
+
+            "═══════════════════════════════════════\n"
+            "📖 **BITÁCORA PERSONAL**\n"
+            "═══════════════════════════════════════\n"
+            "• `bitacora` - Guardar notas personales\n"
             "• `listarBitacora` - Ver todas las notas\n"
             "• `buscarBitacora` - Buscar en notas\n"
             "• `borrarBitacora` - Eliminar notas\n"
-            "• `historialBitacora` - Historial de notas\n"
-            "• `cancelar` - Cancelar recordatorios\n"
-            "• `importante` - Recordatorios importantes\n"
-            "• `completar` - Completar recordatorios importantes\n"
-            "• `repetir` - Duplicar recordatorios\n"
-            "• `exportar` - Exportar datos\n"
-            "• `novia` - Modo especial romântico\n"
-            "• `fortuna` - Fortuna del día\n"
-            "• `admin` - Modo administrador\n"
+            "• `historialBitacora` - Historial de notas\n\n"
+
+            "═══════════════════════════════════════\n"
+            "🔐 **ESPECIALES Y AUTENTICACIÓN**\n"
+            "═══════════════════════════════════════\n"
+            "• `novia` - Activar modo romántico\n"
+            "• `admin` - Activar modo administrador\n"
+            "• `fortuna` - Fortuna diaria romántica\n"
             "• `subirSorpresa` - Subir fotos (admin)\n"
-            "• `sorpresa` - Recibir sorpresas\n\n"
-            "**Ejemplo:** `/explicar recordar`"
+            "• `sorpresa` - Recibir contenido aleatorio\n"
+            "• `exportar` - Exportar datos a PDF\n\n"
+
+            "**💡 Ejemplo:** `/explicar recordar`"
         )
         return
 

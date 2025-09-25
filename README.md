@@ -20,7 +20,13 @@ Ver guía completa en: [`deploy-fly.md`](deploy-fly.md)
 - 🆓 **Completamente gratis**: 3 apps, 160GB-hour/mes
 - 🚫 **No se duerme**: Funciona 24/7 sin problemas de puerto
 - 💾 **Persistente**: Base de datos y archivos se mantienen
-- 🔄 **Auto-redeploy**: `git push` + `fly deploy`
+- 🎛️ **Control total**: Deploy manual cuando quieras
+
+**🔄 Workflow después del deploy inicial:**
+```bash
+# Hacer cambios → Probar local → Commitear → Deploy
+git add -A && git commit -m "cambios" && fly deploy
+```
 
 ---
 
