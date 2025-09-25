@@ -162,9 +162,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Manejo tres funcionalidades principales:
 
-═══════════════════════════════════════════════
+═══════════════════
 📅 **A) RECORDATORIOS**
-═══════════════════════════════════════════════
+═══════════════════
 
 **Comandos principales:**
 • `/recordar <fecha/hora> <texto>` - Crear recordatorio
@@ -182,9 +182,9 @@ Manejo tres funcionalidades principales:
 • "Mañana a las 2 recordame el turno médico"
 • "En 45 minutos recordame sacar la pizza"
 
-═══════════════════════════════════════════════
+══════════════════════
 📖 **B) BITÁCORA PERSONAL**
-═══════════════════════════════════════════════
+══════════════════════
 
 **Comandos principales:**
 • `/bitacora <texto>` - Guardar nota personal
@@ -197,9 +197,9 @@ Manejo tres funcionalidades principales:
 • "Tirar data" / "Tirame la data" - Ver notas
 • "Averigua vino" - Buscar término
 
-═══════════════════════════════════════════════
+════════════════════════════
 🔐 **C) AUTENTICACIÓN Y ESPECIALES**
-═══════════════════════════════════════════════
+════════════════════════════
 
 • `/novia` - Activar modo romántico especial
 • `/admin` - Activar modo administrador
@@ -207,15 +207,15 @@ Manejo tres funcionalidades principales:
 • `/sorpresa` - Recibir contenido aleatorio
 • `/exportar` - Exportar todos los datos a PDF
 
-═══════════════════════════════════════════════
+══════════════════
 🎙️ **MENSAJES DE VOZ**
-═══════════════════════════════════════════════
+══════════════════
 
 ¡Envía audio y lo transcribiré automáticamente!
 
-═══════════════════════════════════════════════
+═══════════════════
 📋 **AYUDA DETALLADA**
-═══════════════════════════════════════════════
+═══════════════════
 
 • `/explicar` - Lista completa de comandos
 • `/explicar <comando>` - Ayuda específica
