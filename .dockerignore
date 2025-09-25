@@ -32,6 +32,7 @@ database/
 # Export files (will be created in container)
 exports/
 *.txt
+!requirements.txt
 
 # Secret gallery (will be created in container)
 secret_gallery/
