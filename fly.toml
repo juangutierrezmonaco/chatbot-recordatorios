@@ -11,15 +11,7 @@ primary_region = "scl"
 
 [[mounts]]
   source = "chatbot_data"
-  destination = "/app/database"
-
-[[mounts]]
-  source = "chatbot_exports"
-  destination = "/app/exports"
-
-[[mounts]]
-  source = "chatbot_gallery"
-  destination = "/app/secret_gallery"
+  destination = "/app/data"
 
 [processes]
   app = "python bot.py"

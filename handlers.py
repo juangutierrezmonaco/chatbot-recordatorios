@@ -2683,7 +2683,7 @@ async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_T
         try:
             # Create unique filename
             unique_filename = f"{uuid.uuid4().hex}{file_extension}"
-            local_file_path = os.path.join("secret_gallery", unique_filename)
+            local_file_path = os.path.join(db.GALLERY_PATH, unique_filename)
 
             # Download and save file locally
             await file_obj.download_to_drive(local_file_path)

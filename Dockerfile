@@ -18,8 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create necessary directories
+# Create necessary directories for local development
 RUN mkdir -p database exports secret_gallery
+
+# Create data directory structure for production (mounted volume)
+RUN mkdir -p /app/data/secret_gallery /app/data/exports
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

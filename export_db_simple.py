@@ -7,20 +7,27 @@ import os
 def export_database_to_txt():
     """Export complete database to simple TXT format - only showing data that exists."""
 
-    db_path = 'database/reminders.db'
+    # Use different paths for development vs production
+    if os.path.exists('/app/data'):  # Production in Fly.io
+        db_path = "/app/data/reminders.db"
+        exports_path = "/app/data/exports"
+    else:  # Local development
+        db_path = "database/reminders.db"
+        exports_path = "exports"
+
     if not os.path.exists(db_path):
-        print("❌ No se encontró la base de datos database/reminders.db")
+        print(f"❌ No se encontró la base de datos {db_path}")
         return
 
     # Create exports directory if it doesn't exist
-    os.makedirs('exports', exist_ok=True)
+    os.makedirs(exports_path, exist_ok=True)
 
     # Find next available number for export
     export_number = 1
-    while os.path.exists(f'exports/{export_number}.txt'):
+    while os.path.exists(f'{exports_path}/{export_number}.txt'):
         export_number += 1
 
-    output_file = f'exports/{export_number}.txt'
+    output_file = f'{exports_path}/{export_number}.txt'
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("=" * 80 + "\n")

@@ -32,18 +32,14 @@ fly auth login
 fly apps create chatbot-recordatorios
 ```
 
-## 4. Crear los volúmenes para persistir datos
+## 4. Crear el volumen para persistir datos
 
 ```bash
-# Volumen para la base de datos
-fly volumes create chatbot_data --region scl --size 1
-
-# Volumen para exports
-fly volumes create chatbot_exports --region scl --size 1
-
-# Volumen para galería secreta
-fly volumes create chatbot_gallery --region scl --size 1
+# Volumen único para todos los datos (base de datos, exports, galería)
+fly volumes create chatbot_data --region scl --size 3
 ```
+
+**Nota**: El plan gratuito solo permite 1 volumen, por eso agrupamos todo.
 
 ## 5. Configurar variables de entorno
 

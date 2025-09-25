@@ -7,7 +7,19 @@ from migrations import MigrationManager
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "database/reminders.db"
+import os
+
+# Use different paths for development vs production
+if os.path.exists('/app/data'):  # Production in Fly.io
+    DB_PATH = "/app/data/reminders.db"
+    GALLERY_PATH = "/app/data/secret_gallery"
+else:  # Local development
+    DB_PATH = "database/reminders.db"
+    GALLERY_PATH = "secret_gallery"
+
+# Ensure directories exist
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+os.makedirs(GALLERY_PATH, exist_ok=True)
 
 def init_db():
     """Initialize the database and run migrations."""
