@@ -203,14 +203,18 @@ def load_pending_reminders(bot: Bot):
 
     logger.info(f"Loaded {regular_count} regular reminders and {important_count} important reminders")
 
-def format_daily_summary(reminders: list, target_date: datetime) -> str:
-    """Build the nightly summary message (HTML) for a list of reminders."""
+def format_daily_summary(reminders: list, target_date: datetime, nightly: bool = True) -> str:
+    """Build the tomorrow summary message (HTML) for a list of reminders.
+
+    nightly=True is the automatic 22:00 message; False is the on-demand /manana reply.
+    """
     date_label = f"{WEEKDAYS_ES[target_date.weekday()]} {target_date.day} de {MONTHS_ES[target_date.month - 1]}"
     count = len(reminders)
     count_label = "1 recordatorio" if count == 1 else f"{count} recordatorios"
 
+    title = "🌙 <b>Resumen para mañana</b>" if nightly else "📅 <b>Tus recordatorios para mañana</b>"
     lines = [
-        "🌙 <b>Resumen para mañana</b>",
+        title,
         f"📅 {date_label.capitalize()} · {count_label}",
         "",
     ]
@@ -222,8 +226,9 @@ def format_daily_summary(reminders: list, target_date: datetime) -> str:
         lines.append(f"   {html.escape(reminder['text'])}")
         lines.append("")
 
-    lines.append("💤 ¡Que descanses!")
-    return "\n".join(lines)
+    if nightly:
+        lines.append("💤 ¡Que descanses!")
+    return "\n".join(lines).rstrip()
 
 async def send_daily_summary(bot: Bot):
     """Send each user a summary of their reminders scheduled for tomorrow."""

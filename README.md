@@ -86,6 +86,7 @@ python3 bot.py
 - `/recordar <fecha/hora> <texto>` - Crear recordatorios
 - `/lista [filtro]` - Ver recordatorios por categoría
 - `/hoy` - Recordatorios de hoy (pendientes y enviados)
+- `/manana` - Recordatorios pendientes de mañana
 - `/semana [pendientes]` - Vista semanal completa
 - `/dia <fecha>` - Ver cualquier día (incluye "ayer", fechas pasadas)
 - `/buscar <término>` - Búsqueda inteligente
@@ -99,6 +100,7 @@ python3 bot.py
 ### 🌙 **Resumen nocturno automático:**
 - Todas las noches a las **22:00** (hora de Buenos Aires) el bot envía un resumen con los recordatorios pendientes del día siguiente
 - Solo se envía si tenés recordatorios para mañana (no hay spam los días vacíos)
+- Podés ver ese mismo resumen en cualquier momento con `/manana`
 
 ### 📖 **Sistema de Bitácora:**
 - `/bitacora <texto>` - Crear nota
