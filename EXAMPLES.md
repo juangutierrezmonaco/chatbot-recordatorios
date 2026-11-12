@@ -454,7 +454,11 @@ El bot entiende múltiples formatos de fecha y hora:
 - `el mes que viene`
 
 #### Horas Inteligentes
-- `a las 9` → 9:00 AM si es de mañana, 9:00 PM si es de noche
+- `a las 9` → la próxima vez que el reloj marque las 9 (hoy a la mañana o a la noche, o mañana)
+- `a las 9 de la mañana`, `a las 9 de la noche`, `a las 9 am`, `a las 9 pm` → sin ambigüedad
+- `a las 12` → mediodía; para la medianoche: `a las 12 de la noche` o `a las 0`
+- `a las 9:30`, `a las 9.30`, `a las 21hs` → minutos con dos puntos o punto, sufijo `hs` opcional
+- `mañana a las 6` → con el día indicado, la hora se toma tal cual (06:00); para la tarde: `mañana a las 18` o `mañana a las 6 de la tarde`
 - `18:30` → formato 24 horas
 - `6:30 PM` → formato 12 horas
 - `en 30m`, `en 2 horas`
