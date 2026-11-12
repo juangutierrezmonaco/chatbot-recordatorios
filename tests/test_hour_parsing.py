@@ -159,25 +159,48 @@ class HourOnAGivenDay(HourCases):
             ('hoy a las 2 almorzar', ('11/11 14:00', 'almorzar')),
         ], at(15))
 
-    def test_another_day_uses_waking_hours(self):
+    def test_another_day_takes_the_hour_as_written(self):
+        # 1-11 are the morning; the afternoon needs 13-23 or a hint
         self.check([
             ('mañana a las 10 ir al médico', ('12/11 10:00', 'ir al médico')),
             ('mañana a las 7 gimnasio', ('12/11 07:00', 'gimnasio')),
-            ('mañana a las 3 merendar', ('12/11 15:00', 'merendar')),
-            ('mañana a las 6 merendar', ('12/11 18:00', 'merendar')),
-            ('mañana a las 6 de la mañana salir', ('12/11 06:00', 'salir')),
-            ('a las 10 mañana ir al médico', ('12/11 10:00', 'ir al médico')),
+            ('mañana a las 6 levantarme', ('12/11 06:00', 'levantarme')),
+            ('mañana a las 3 tomar antibiótico', ('12/11 03:00', 'tomar antibiótico')),
+            ('mañana a las 15 merendar', ('12/11 15:00', 'merendar')),
+            ('mañana a las 3 de la tarde merendar', ('12/11 15:00', 'merendar')),
             ('pasado mañana a las 10 llamar a mamá', ('13/11 10:00', 'llamar a mamá')),
         ], at(15))
 
     def test_after_a_date(self):
         self.check([
             ('el 20/12 a las 9 viaje', ('20/12 09:00', 'viaje')),
-            ('el 20/12 a las 3 viaje', ('20/12 15:00', 'viaje')),
+            ('el 20/12 a las 3 viaje', ('20/12 03:00', 'viaje')),
+            ('el 20/12 a las 15 viaje', ('20/12 15:00', 'viaje')),
             ('el 20/12 a las 9 de la noche viaje', ('20/12 21:00', 'viaje')),
             ('el 20/12 a las 9.30hs viaje', ('20/12 09:30', 'viaje')),
             ('el 20/12 a las 12 viaje', ('20/12 12:00', 'viaje')),
             ('lunes 16 a las 8 reunión', ('16/11 08:00', 'reunión')),
+        ], at(15))
+
+
+class DayWordPosition(HourCases):
+    """hoy / mañana count as the day only next to the time or opening the message."""
+
+    def test_day_word_tied_to_the_time(self):
+        self.check([
+            ('mañana a las 10 ir al médico', ('12/11 10:00', 'ir al médico')),
+            ('ir al médico mañana a las 10', ('12/11 10:00', 'ir al médico')),
+            ('a las 10 mañana ir al médico', ('12/11 10:00', 'ir al médico')),
+            ('mañana ir al médico a las 10', ('12/11 10:00', 'ir al médico')),
+            ('ir al médico pasado mañana a las 10', ('13/11 10:00', 'ir al médico')),
+        ], at(15))
+
+    def test_day_word_inside_the_reminder_stays_in_the_text(self):
+        # "que" and "de" are dropped by the request-word cleanup (issue #5)
+        self.check([
+            ('a las 20 avisar que mañana no voy', ('11/11 20:00', 'avisar mañana no voy')),
+            ('a las 18 comprar pan para hoy y mañana', ('11/11 18:00', 'comprar pan para hoy y mañana')),
+            ('a las 9 llamar para confirmar el turno de mañana', ('11/11 21:00', 'llamar para confirmar el turno mañana')),
         ], at(15))
 
 

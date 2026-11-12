@@ -1079,6 +1079,13 @@ async def process_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         f"✅ Dale, te aviso el {formatted_date}: \"{reminder_text}\" [#{category}] (ID #{reminder_id})"
     )
 
+def _is_future(datetime_obj: datetime) -> bool:
+    """True when the moment is still ahead. Naive datetimes are read as Buenos Aires time."""
+    timezone = pytz.timezone('America/Argentina/Buenos_Aires')
+    if datetime_obj.tzinfo is None:
+        datetime_obj = timezone.localize(datetime_obj)
+    return datetime_obj > datetime.now(timezone)
+
 def _smart_day_parse(day: int, now: datetime) -> datetime:
     """Parse a day of the month intelligently (e.g., 'el 20')."""
     if day < 1 or day > 31:
@@ -1201,10 +1208,6 @@ TIME_EXPRESSION_PATTERN = (
 # "la mañana" / "esta mañana" are a part of the day, not tomorrow.
 RELATIVE_DAY_PATTERN = r'\b(pasado\s+ma[ñn]ana|(?<!\bla\s)(?<!\besta\s)ma[ñn]ana|hoy)\b'
 
-# On a day other than today, an hour with no AM/PM hint is read inside waking hours:
-# 7 to 11 stay in the morning, 1 to 6 move to the afternoon.
-DAYTIME_START_HOUR = 7
-
 def _parse_time_match(match) -> Optional[Tuple[int, int, Optional[str]]]:
     """Read (hour, minute, period) from a TIME_EXPRESSION_PATTERN match.
 
@@ -1285,17 +1288,16 @@ def _smart_hour_parse(hour: int, minute: int, now: datetime, period: Optional[st
 def _hour_on_day(day: datetime, hour: int, minute: int, now: datetime, period: Optional[str] = None) -> datetime:
     """Put a written hour on a day that is already known (e.g., 'mañana a las 9').
 
+    On any day other than today the hour is taken as written: 1-11 are the morning, and the
+    afternoon needs 13-23 or a hint ("de la tarde", "pm").
     The day is respected even if the result is in the past; the caller rejects past dates.
     """
     hour24, ambiguous, day_offset = _resolve_hour(hour, period)
 
-    if ambiguous:
-        if day.date() == now.date():
-            # Today: the morning reading if it is still ahead, otherwise the evening one
-            morning = day.replace(hour=hour24, minute=minute, second=0, microsecond=0)
-            if morning <= now:
-                hour24 += 12
-        elif hour24 < DAYTIME_START_HOUR:
+    if ambiguous and day.date() == now.date():
+        # Today: the morning reading if it is still ahead, otherwise the evening one
+        morning = day.replace(hour=hour24, minute=minute, second=0, microsecond=0)
+        if morning <= now:
             hour24 += 12
 
     target_day = day + timedelta(days=day_offset)
@@ -1310,9 +1312,30 @@ def _relative_day_offset(day_word: str) -> int:
         return 0
     return 1
 
-def _remove_span(text: str, match) -> str:
-    """Cut a regex match out of a text, leaving single spaces."""
-    return re.sub(r'\s+', ' ', text[:match.start()] + ' ' + text[match.end():]).strip()
+def _day_next_to_time(text: str, time_match) -> Optional[Tuple[int, Tuple[int, int]]]:
+    """Find the hoy / mañana / pasado mañana that goes with a time expression.
+
+    The word counts as the day only right before the time, right after it, or opening the
+    message. Anywhere else it belongs to the reminder ("a las 20 avisar que mañana no voy").
+    Returns (days_from_today, span_in_text) or None.
+    """
+    candidates = (
+        re.search(RELATIVE_DAY_PATTERN + r'\s*$', text[:time_match.start()], re.IGNORECASE),
+        re.compile(r'\s*' + RELATIVE_DAY_PATTERN, re.IGNORECASE).match(text, time_match.end()),
+        re.match(RELATIVE_DAY_PATTERN, text, re.IGNORECASE)
+    )
+
+    for day_match in candidates:
+        if day_match:
+            return _relative_day_offset(day_match.group(1)), day_match.span(1)
+
+    return None
+
+def _remove_spans(text: str, spans: List[Tuple[int, int]]) -> str:
+    """Cut (start, end) spans out of a text, leaving single spaces."""
+    for start, end in sorted(spans, reverse=True):
+        text = text[:start] + ' ' + text[end:]
+    return re.sub(r'\s+', ' ', text).strip()
 
 def _smart_weekday_day_parse(weekday: str, day: int, now: datetime) -> datetime:
     """Parse weekday + day (e.g., 'lunes 29')."""
@@ -1542,6 +1565,8 @@ def extract_date_and_text(text: str, now: datetime = None):
     """Extract date/time and reminder text.
 
     now: the moment the message is read; defaults to the current time. Tests pass a fixed one.
+    It drives the smart date patterns, the "a las X" times and the "en X minutos" offsets.
+    The dateparser fallbacks and "antes de las" further down still read the real clock.
     """
 
     # Clean text
@@ -1590,7 +1615,7 @@ def extract_date_and_text(text: str, now: datetime = None):
                 if parsed_time:
                     hour, minute, period = parsed_time
                     datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
-                    clean_text = _remove_span(clean_text, time_match)
+                    clean_text = _remove_spans(clean_text, [time_match.span()])
 
                 return datetime_obj, clean_text
 
@@ -1599,17 +1624,18 @@ def extract_date_and_text(text: str, now: datetime = None):
     parsed_time = _parse_time_match(time_match) if time_match else None
     if parsed_time:
         hour, minute, period = parsed_time
-        clean_text = _remove_span(text, time_match)
+        spans_to_remove = [time_match.span()]
 
-        day_match = re.search(RELATIVE_DAY_PATTERN, clean_text, re.IGNORECASE)
-        if day_match:
-            day = now + timedelta(days=_relative_day_offset(day_match.group(1)))
+        named_day = _day_next_to_time(text, time_match)
+        if named_day:
+            days_from_today, day_span = named_day
+            day = now + timedelta(days=days_from_today)
             datetime_obj = _hour_on_day(day, hour, minute, now, period)
-            clean_text = _remove_span(clean_text, day_match)
+            spans_to_remove.append(day_span)
         else:
             datetime_obj = _smart_hour_parse(hour, minute, now, period)
 
-        return datetime_obj, clean_text
+        return datetime_obj, _remove_spans(text, spans_to_remove)
 
     # Helper function to convert Spanish number words to digits
     def spanish_word_to_number(word):
@@ -1790,6 +1816,10 @@ async def process_important_reminder(update: Update, context: ContextTypes.DEFAU
             )
             return
 
+        if not _is_future(parsed_date):
+            await update.message.reply_text("❌ La fecha debe ser en el futuro.")
+            return
+
         # Extract category if present
         remaining_text, explicit_category = extract_explicit_category(remaining_text)
 
@@ -1910,6 +1940,10 @@ async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "• en 1 hora\n"
                 "• en 30 minutos"
             )
+            return
+
+        if not _is_future(new_datetime):
+            await update.message.reply_text("❌ La fecha debe ser en el futuro.")
             return
     else:
         # Use original datetime if no new one provided
