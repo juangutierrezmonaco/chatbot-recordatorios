@@ -1249,6 +1249,12 @@ FULL_DATE_PATTERN = (
     r'(?:el\s+)?(?P<day_number>\d{1,2})[\/\-](?P<month_number>\d{1,2})[\/\-](?P<year>\d{4}|\d{2})\b'
 )
 
+# "20/12", "el 20/12", "viernes 20/12" (day/month, this year or the next one)
+SHORT_DATE_PATTERN = (
+    r'\b' + _WEEKDAY_BEFORE_DATE +
+    r'(?:el\s+)?(?P<day_number>\d{1,2})[\/\-](?P<month_number>\d{1,2})\b(?![\-:])'
+)
+
 # Day named next to a time: "hoy", "mañana", "pasado mañana", "el viernes", "el viernes que viene".
 # "la mañana" / "esta mañana" are a part of the day, not tomorrow.
 # "que" is stripped before parsing, so "viernes que viene" arrives as "viernes viene".
@@ -1733,7 +1739,7 @@ def extract_date_and_text(text: str, now: datetime = None):
         # "el 20" (day of current month/year)
         (r'\bel\s+(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
         # "el 20/12" or "20/12" (day/month of current year)
-        (r'\b(?:el\s+)?(\d{1,2})[\/\-](\d{1,2})\b(?![\-:])', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now))
+        (SHORT_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group('day_number')), int(m.group('month_number')), now))
     ]
 
     for pattern, calc_func in smart_patterns:

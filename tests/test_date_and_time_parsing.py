@@ -122,6 +122,8 @@ class FullDates(ParsingCases):
             ('viernes 25 de diciembre a las 10 abrir regalos', ('25/12/2026 10:00', 'abrir regalos')),
             ('abrir regalos el viernes 25 de diciembre', ('25/12/2026 09:00', 'abrir regalos')),
             ('el domingo 20/12/2026 09:30 viaje', ('20/12/2026 09:30', 'viaje')),
+            ('domingo 20/12 a las 10 viaje', ('20/12/2026 10:00', 'viaje')),
+            ('el domingo 20/12 18hs viaje', ('20/12/2026 18:00', 'viaje')),
         ], at(15), WITH_YEAR)
 
 
