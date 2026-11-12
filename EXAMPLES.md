@@ -464,9 +464,17 @@ El bot entiende múltiples formatos de fecha y hora:
 - `en 30m`, `en 2 horas`
 
 #### Fechas Específicas
-- `25/09/2025`
+- `25/09/2025`, `25/09/25` → fecha completa, tal cual está escrita
+- `25/09` → este año, o el próximo si ya pasó
+- `25 de diciembre`, `el 25 de diciembre de 2027`, `viernes 25 de diciembre` → cuenta como fecha al comienzo del mensaje, después de `el` o junto a la hora; así `ir a 9 de Julio 1234` sigue siendo texto
 - `el 15` (día 15 del mes actual)
 - `lunes 29` (lunes más cercano que caiga día 29)
+
+#### Fecha y Hora Juntas
+- `el viernes a las 10`, `mañana a las 9 de la noche`, `el 25 de diciembre a las 10`
+- `20/12/2026 09:30`, `20/12 18hs`, `mañana 18:00`, `el viernes 18hs` → la hora en formato reloj va pegada a la fecha
+- `el viernes que viene a las 10`, `el próximo viernes a las 10`
+- El día cuenta si está junto a la hora o al comienzo del mensaje; en otro lugar queda como parte del texto
 
 ### Capitalización Automática
 

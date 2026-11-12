@@ -3,36 +3,9 @@
 Run from the project root:
     python3 -m unittest discover -s tests -v
 """
-import os
-import sys
 import unittest
-from datetime import datetime
 
-import pytz
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from handlers import extract_date_and_text  # noqa: E402
-
-TZ = pytz.timezone('America/Argentina/Buenos_Aires')
-
-
-def at(hour, minute=0, day=11):
-    """A fixed 'now' on Wednesday 11/11/2026 (or another day of that month)."""
-    return TZ.localize(datetime(2026, 11, day, hour, minute))
-
-
-def parse(text, now):
-    """Return ('dd/mm HH:MM', reminder_text) for a message read at `now`."""
-    parsed, reminder_text = extract_date_and_text(text, now=now)
-    return (parsed.strftime('%d/%m %H:%M') if parsed else None, reminder_text)
-
-
-class HourCases(unittest.TestCase):
-    def check(self, cases, now):
-        for text, expected in cases:
-            with self.subTest(text=text, now=now.strftime('%H:%M')):
-                self.assertEqual(parse(text, now), expected)
+from parsing_helpers import ParsingCases as HourCases, at, extract_date_and_text
 
 
 class NoonAndMidnight(HourCases):
