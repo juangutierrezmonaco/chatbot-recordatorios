@@ -1,6 +1,8 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
+import html
 import logging
 from datetime import datetime, timedelta
 import pytz
@@ -9,7 +11,18 @@ import db
 
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler(timezone=pytz.timezone('America/Argentina/Buenos_Aires'))
+TIMEZONE = pytz.timezone('America/Argentina/Buenos_Aires')
+
+scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+
+# Nightly summary of the next day's reminders
+DAILY_SUMMARY_HOUR = 22
+DAILY_SUMMARY_MINUTE = 0
+DAILY_SUMMARY_JOB_ID = "daily_summary"
+
+WEEKDAYS_ES = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
+MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+             'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
 def init_scheduler():
     """Initialize the scheduler."""
@@ -189,6 +202,64 @@ def load_pending_reminders(bot: Bot):
             important_count += 1
 
     logger.info(f"Loaded {regular_count} regular reminders and {important_count} important reminders")
+
+def format_daily_summary(reminders: list, target_date: datetime) -> str:
+    """Build the nightly summary message (HTML) for a list of reminders."""
+    date_label = f"{WEEKDAYS_ES[target_date.weekday()]} {target_date.day} de {MONTHS_ES[target_date.month - 1]}"
+    count = len(reminders)
+    count_label = "1 recordatorio" if count == 1 else f"{count} recordatorios"
+
+    lines = [
+        "🌙 <b>Resumen para mañana</b>",
+        f"📅 {date_label.capitalize()} · {count_label}",
+        "",
+    ]
+
+    for reminder in reminders:
+        time_str = reminder['datetime'].astimezone(TIMEZONE).strftime("%H:%M")
+        emoji = "🔥" if reminder.get('is_important') else "🔔"
+        lines.append(f"{emoji} <b>{time_str}</b> · #{reminder['id']}")
+        lines.append(f"   {html.escape(reminder['text'])}")
+        lines.append("")
+
+    lines.append("💤 ¡Que descanses!")
+    return "\n".join(lines)
+
+async def send_daily_summary(bot: Bot):
+    """Send each user a summary of their reminders scheduled for tomorrow."""
+    tomorrow = datetime.now(TIMEZONE) + timedelta(days=1)
+
+    try:
+        reminders_by_chat = db.get_all_active_reminders_for_date(tomorrow)
+    except Exception as e:
+        logger.error(f"Error fetching reminders for daily summary: {e}")
+        return
+
+    sent = 0
+    for chat_id, reminders in reminders_by_chat.items():
+        try:
+            message = format_daily_summary(reminders, tomorrow)
+            await bot.send_message(chat_id=chat_id, text=message, parse_mode='HTML')
+            sent += 1
+        except Exception as e:
+            logger.error(f"Error sending daily summary to chat {chat_id}: {e}")
+
+    logger.info(f"Daily summary sent to {sent}/{len(reminders_by_chat)} chats")
+
+def schedule_daily_summary(bot: Bot):
+    """Schedule the nightly job that sends tomorrow's reminders summary."""
+    scheduler.add_job(
+        send_daily_summary,
+        trigger=CronTrigger(hour=DAILY_SUMMARY_HOUR, minute=DAILY_SUMMARY_MINUTE, timezone=TIMEZONE),
+        args=[bot],
+        id=DAILY_SUMMARY_JOB_ID,
+        name="Resumen diario de recordatorios",
+        replace_existing=True,
+        misfire_grace_time=600,
+        coalesce=True
+    )
+
+    logger.info(f"Daily summary scheduled every day at {DAILY_SUMMARY_HOUR:02d}:{DAILY_SUMMARY_MINUTE:02d}")
 
 def shutdown_scheduler():
     """Stop the scheduler."""

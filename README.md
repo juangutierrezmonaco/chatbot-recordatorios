@@ -96,6 +96,10 @@ python3 bot.py
 - `/completar <id>` - Completar recordatorios importantes
 - `/exportar [completo]` - Exportar a PDF
 
+### 🌙 **Resumen nocturno automático:**
+- Todas las noches a las **22:00** (hora de Buenos Aires) el bot envía un resumen con los recordatorios pendientes del día siguiente
+- Solo se envía si tenés recordatorios para mañana (no hay spam los días vacíos)
+
 ### 📖 **Sistema de Bitácora:**
 - `/bitacora <texto>` - Crear nota
 - `/listarBitacora [límite]` - Ver todas las notas

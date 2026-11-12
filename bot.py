@@ -96,6 +96,10 @@ def main():
         scheduler.load_pending_reminders(application.bot)
         logger.info("✅ Pending reminders loaded")
 
+        # Schedule nightly summary of tomorrow's reminders (22:00)
+        scheduler.schedule_daily_summary(application.bot)
+        logger.info("✅ Daily summary scheduled")
+
         logger.info("🚀 Bot started successfully")
         print("🤖 Bot de recordatorios iniciado")
         print("📋 Presiona Ctrl+C para detener")
