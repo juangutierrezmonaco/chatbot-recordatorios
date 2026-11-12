@@ -47,6 +47,9 @@ secret_gallery/
 .DS_Store
 Thumbs.db
 
+# Tests
+tests/
+
 # Documentation and examples
 README.md
 EXAMPLES.md

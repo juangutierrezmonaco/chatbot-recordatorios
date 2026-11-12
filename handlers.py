@@ -1,7 +1,7 @@
 import re
 import logging
 from datetime import datetime, timedelta
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import unicodedata
 import pytz
 import dateparser
@@ -1184,67 +1184,135 @@ def _smart_weekday_day_parse_with_past(weekday_str: str, day: int, now: datetime
 
     return None
 
-def _smart_hour_parse(hour: int, minute: int, now: datetime) -> datetime:
-    """Parse hour intelligently (e.g., 'a las 9')."""
+# Time of day as the user writes it: "a las 9", "a las 9:30", "a las 9.30", "a las 21hs",
+# "a las 9 pm", "a las 9 de la noche", "a las 12 del mediodía".
+# The "de" is optional because request words (including "de") are stripped before parsing.
+TIME_EXPRESSION_PATTERN = (
+    r'\ba\s*las?\s+(\d{1,2})(?:[:.](\d{2}))?(?!\d)'
+    r'(?:\s*(?:hs|hrs|horas|h)\b\.?)?'
+    r'(?:'
+    r'\s*(?P<meridiem>[ap])\.?\s?m\b\.?'
+    r'|\s+(?:(?:de|por)\s+)?la\s+(?P<period>ma[ñn]ana|tarde|noche|madrugada)\b'
+    r'|\s+(?:(?:del?|al)\s+)?(?P<noon>mediod[ií]a)\b'
+    r')?'
+)
+
+# Day named next to a time: "hoy", "mañana", "pasado mañana".
+# "la mañana" / "esta mañana" are a part of the day, not tomorrow.
+RELATIVE_DAY_PATTERN = r'\b(pasado\s+ma[ñn]ana|(?<!\bla\s)(?<!\besta\s)ma[ñn]ana|hoy)\b'
+
+# On a day other than today, an hour with no AM/PM hint is read inside waking hours:
+# 7 to 11 stay in the morning, 1 to 6 move to the afternoon.
+DAYTIME_START_HOUR = 7
+
+def _parse_time_match(match) -> Optional[Tuple[int, int, Optional[str]]]:
+    """Read (hour, minute, period) from a TIME_EXPRESSION_PATTERN match.
+
+    period is one of 'am', 'pm', 'manana', 'tarde', 'noche', 'madrugada', 'mediodia' or None.
+    Returns None when the numbers are not a valid time.
+    """
+    hour = int(match.group(1))
+    minute = int(match.group(2)) if match.group(2) else 0
+    if hour > 23 or minute > 59:
+        return None
+
+    period = None
+    if match.group('meridiem'):
+        period = match.group('meridiem').lower() + 'm'
+    elif match.group('period'):
+        period = normalize_text_for_search(match.group('period'))
+    elif match.group('noon'):
+        period = 'mediodia'
+
+    return hour, minute, period
+
+def _resolve_hour(hour: int, period: Optional[str]) -> Tuple[int, bool, int]:
+    """Turn a written hour into a 24h hour.
+
+    Returns (hour24, is_ambiguous, day_offset):
+    - is_ambiguous: the hour is 1-11 with no hint, so it could be AM or PM.
+    - day_offset: 1 for "12 de la noche", the midnight that closes the day it is said for.
+    """
+    # 0 and 13-23 are already 24h, whatever comes after them
+    if hour == 0 or hour >= 13:
+        return hour, False, 0
+
+    if period is None:
+        # A bare "a las 12" is noon; midnight has to be asked for explicitly
+        return hour, hour != 12, 0
+
+    if period in ('am', 'madrugada'):
+        return (0 if hour == 12 else hour), False, 0
+
+    if period == 'manana':
+        # "12 de la mañana" is the colloquial way of saying noon
+        return hour, False, 0
+
+    if period in ('pm', 'tarde'):
+        return (12 if hour == 12 else hour + 12), False, 0
+
+    if period == 'mediodia':
+        # "12 del mediodía", "1 del mediodía"
+        return (hour + 12 if hour < 6 else hour), False, 0
+
+    # 'noche'
+    if hour == 12:
+        return 0, False, 1
+    if hour >= 6:
+        return hour + 12, False, 0
+    return hour, False, 0  # "2 de la noche" is 02:00
+
+def _smart_hour_parse(hour: int, minute: int, now: datetime, period: Optional[str] = None) -> datetime:
+    """Next time the clock shows this hour, counting from now (e.g., 'a las 9').
+
+    Without an AM/PM hint, 1-11 can be morning or evening: the first one still ahead wins.
+    """
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         return None
 
-    # If hour is already in 24h format (13-23), use as is
-    if hour >= 13:
-        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target_time <= now:
-            target_time += timedelta(days=1)
-        return target_time
+    hour24, ambiguous, _ = _resolve_hour(hour, period)
+    candidate_hours = [hour24, hour24 + 12] if ambiguous else [hour24]
 
-    # For hours 1-12, we need to infer AM/PM
-    # Create both AM and PM options
-    am_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    pm_time = now.replace(hour=hour + 12, minute=minute, second=0, microsecond=0)
+    for day_offset in (0, 1):
+        day = now + timedelta(days=day_offset)
+        for candidate_hour in candidate_hours:
+            candidate = day.replace(hour=candidate_hour, minute=minute, second=0, microsecond=0)
+            if candidate > now:
+                return candidate
 
-    # Smart inference logic:
-    # 1. If it's before 6 AM, prefer AM times
-    if now.hour < 6:
-        if am_time > now:
-            return am_time
-        elif pm_time > now:
-            return pm_time
-        else:
-            return am_time + timedelta(days=1)
+    return None
 
-    # 2. If it's morning (6 AM - 11:59 AM), prefer the next available time
-    elif 6 <= now.hour < 12:
-        if am_time > now:
-            return am_time
-        elif pm_time > now:
-            return pm_time
-        else:
-            return am_time + timedelta(days=1)
+def _hour_on_day(day: datetime, hour: int, minute: int, now: datetime, period: Optional[str] = None) -> datetime:
+    """Put a written hour on a day that is already known (e.g., 'mañana a las 9').
 
-    # 3. If it's afternoon/evening (12 PM onwards), prefer PM for reasonable hours
-    else:
-        # For typical evening hours (6-11), strongly prefer PM if it's future
-        if 6 <= hour <= 11 and pm_time > now:
-            return pm_time
-        # For early hours (1-5), could be either but prefer the next available
-        elif 1 <= hour <= 5:
-            if pm_time > now:
-                return pm_time
-            else:
-                return am_time + timedelta(days=1)
-        # For hours like 12, prefer PM if available
-        elif hour == 12:
-            if pm_time > now:
-                return pm_time
-            else:
-                return am_time + timedelta(days=1)
-        # For other cases, use next available
-        else:
-            if am_time > now:
-                return am_time
-            elif pm_time > now:
-                return pm_time
-            else:
-                return am_time + timedelta(days=1)
+    The day is respected even if the result is in the past; the caller rejects past dates.
+    """
+    hour24, ambiguous, day_offset = _resolve_hour(hour, period)
+
+    if ambiguous:
+        if day.date() == now.date():
+            # Today: the morning reading if it is still ahead, otherwise the evening one
+            morning = day.replace(hour=hour24, minute=minute, second=0, microsecond=0)
+            if morning <= now:
+                hour24 += 12
+        elif hour24 < DAYTIME_START_HOUR:
+            hour24 += 12
+
+    target_day = day + timedelta(days=day_offset)
+    return target_day.replace(hour=hour24, minute=minute, second=0, microsecond=0)
+
+def _relative_day_offset(day_word: str) -> int:
+    """Days from today for 'hoy' (0), 'mañana' (1) or 'pasado mañana' (2)."""
+    normalized = normalize_text_for_search(day_word)
+    if normalized.startswith('pasado'):
+        return 2
+    if normalized == 'hoy':
+        return 0
+    return 1
+
+def _remove_span(text: str, match) -> str:
+    """Cut a regex match out of a text, leaving single spaces."""
+    return re.sub(r'\s+', ' ', text[:match.start()] + ' ' + text[match.end():]).strip()
 
 def _smart_weekday_day_parse(weekday: str, day: int, now: datetime) -> datetime:
     """Parse weekday + day (e.g., 'lunes 29')."""
@@ -1470,8 +1538,11 @@ def _parse_date_only(text: str) -> datetime:
 
     return None
 
-def extract_date_and_text(text: str):
-    """Extract date/time and reminder text."""
+def extract_date_and_text(text: str, now: datetime = None):
+    """Extract date/time and reminder text.
+
+    now: the moment the message is read; defaults to the current time. Tests pass a fixed one.
+    """
 
     # Clean text
     text = text.strip()
@@ -1491,7 +1562,8 @@ def extract_date_and_text(text: str):
     text = re.sub(r'\s+', ' ', text).strip()
 
     # Get current time for smart inference
-    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+    if now is None:
+        now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
 
     # Smart patterns for intuitive date parsing
     smart_patterns = [
@@ -1502,9 +1574,7 @@ def extract_date_and_text(text: str):
         # "el 20" (day of current month/year)
         (r'\bel\s+(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
         # "el 20/12" or "20/12" (day/month of current year)
-        (r'\b(?:el\s+)?(\d{1,2})[\/\-](\d{1,2})\b(?![\-:])', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now)),
-        # "a las 9" (smart hour inference)
-        (r'\ba\s*las?\s+(\d{1,2})(?::(\d{2}))?\b', lambda m: _smart_hour_parse(int(m.group(1)), int(m.group(2)) if m.group(2) else 0, now))
+        (r'\b(?:el\s+)?(\d{1,2})[\/\-](\d{1,2})\b(?![\-:])', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now))
     ]
 
     for pattern, calc_func in smart_patterns:
@@ -1515,26 +1585,31 @@ def extract_date_and_text(text: str):
                 clean_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
 
                 # After finding a date, check if there's time info in remaining text
-                time_match = re.search(r'\ba\s*las?\s+(\d{1,2})(?::(\d{2}))?\b', clean_text, re.IGNORECASE)
-                if time_match:
-                    hour = int(time_match.group(1))
-                    minute = int(time_match.group(2)) if time_match.group(2) else 0
-
-                    # Apply smart hour parsing if needed
-                    if hour <= 12:
-                        # Use the same smart hour logic
-                        time_obj = _smart_hour_parse(hour, minute, datetime_obj)
-                        if time_obj:
-                            # Replace the date part but keep the time from smart parsing
-                            datetime_obj = datetime_obj.replace(hour=time_obj.hour, minute=time_obj.minute)
-                    else:
-                        # Hour is already in 24h format
-                        datetime_obj = datetime_obj.replace(hour=hour, minute=minute)
-
-                    # Remove time pattern from clean text
-                    clean_text = re.sub(r'\ba\s*las?\s+\d{1,2}(?::\d{2})?\b', '', clean_text, flags=re.IGNORECASE).strip()
+                time_match = re.search(TIME_EXPRESSION_PATTERN, clean_text, re.IGNORECASE)
+                parsed_time = _parse_time_match(time_match) if time_match else None
+                if parsed_time:
+                    hour, minute, period = parsed_time
+                    datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
+                    clean_text = _remove_span(clean_text, time_match)
 
                 return datetime_obj, clean_text
+
+    # A time with no date pattern: "a las 9", alone or next to hoy / mañana / pasado mañana
+    time_match = re.search(TIME_EXPRESSION_PATTERN, text, re.IGNORECASE)
+    parsed_time = _parse_time_match(time_match) if time_match else None
+    if parsed_time:
+        hour, minute, period = parsed_time
+        clean_text = _remove_span(text, time_match)
+
+        day_match = re.search(RELATIVE_DAY_PATTERN, clean_text, re.IGNORECASE)
+        if day_match:
+            day = now + timedelta(days=_relative_day_offset(day_match.group(1)))
+            datetime_obj = _hour_on_day(day, hour, minute, now, period)
+            clean_text = _remove_span(clean_text, day_match)
+        else:
+            datetime_obj = _smart_hour_parse(hour, minute, now, period)
+
+        return datetime_obj, clean_text
 
     # Helper function to convert Spanish number words to digits
     def spanish_word_to_number(word):
