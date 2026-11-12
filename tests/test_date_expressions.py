@@ -8,7 +8,7 @@ Run from the project root:
 import unittest
 from datetime import datetime
 
-from parsing_helpers import TZ, ParsingCases, at
+from parsing_helpers import TZ, ParsingCases, at, parse
 
 WITH_YEAR = '%d/%m/%Y %H:%M'
 WITH_SECONDS = '%d/%m %H:%M:%S'
@@ -67,6 +67,25 @@ class RelativeOffsets(ParsingCases):
             ('en 3 días a la tarde llamar al banco', ('14/11 16:00', 'llamar al banco')),
         ], at(15))
 
+    def test_half_months_and_years(self):
+        self.check([
+            ('en un mes y medio pagar la cuota', ('26/12/2026 15:00', 'pagar la cuota')),
+            ('en medio mes pagar la cuota', ('26/11/2026 15:00', 'pagar la cuota')),
+            ('en un año y medio renovar', ('11/05/2028 15:00', 'renovar')),
+        ], at(15), WITH_YEAR)
+
+    def test_a_day_named_first_wins_over_a_day_offset_in_the_text(self):
+        # "que" is dropped by the request-word cleanup (issue #5)
+        self.check([
+            ('mañana avisar que en 2 semanas viajo', ('12/11 09:00', 'avisar en 2 semanas viajo')),
+            ('el viernes avisar que en 3 meses vence el contrato', ('13/11 09:00', 'avisar en 3 meses vence el contrato')),
+            ('mañana a las 10 avisar que en 2 semanas viajo', ('12/11 10:00', 'avisar en 2 semanas viajo')),
+            # The offset comes first: it is the date
+            ('en 2 semanas avisar que mañana no voy', ('25/11 15:00', 'avisar mañana no voy')),
+            # Minutes and hours always count from now
+            ('hoy llamar en 30 minutos a Juan', ('11/11 15:30', 'hoy llamar a Juan')),
+        ], at(15))
+
 
 class WeekdayWithoutTime(ParsingCases):
     def test_weekday_alone_is_at_nine(self):
@@ -122,7 +141,6 @@ class RelativeDayWithoutTime(ParsingCases):
         now = at(15)
         for text in ('el lunes reunión con Juan 15:30', 'el sábado partido 21:00'):
             with self.subTest(text=text):
-                from parsing_helpers import parse
                 parsed, _ = parse(text, now)
                 self.assertNotIn('09:00', parsed or '')
 

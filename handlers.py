@@ -1483,7 +1483,7 @@ def _is_day_unit(unit: str) -> bool:
 def _add_offset(now: datetime, amount: float, unit: str) -> datetime:
     """Moment that is `amount` units from now ('en 3 días', 'en 90 segundos', 'en 2 meses').
 
-    Days and longer keep the time of day. Returns None for a fraction of a month or a year.
+    Days and longer keep the time of day. Half a month counts as 15 days.
     """
     unit = normalize_text_for_search(unit)
     if unit.startswith('seg'):
@@ -1498,9 +1498,8 @@ def _add_offset(now: datetime, amount: float, unit: str) -> datetime:
         return now + timedelta(weeks=amount)
 
     months = amount * (12 if unit.startswith('a') else 1)
-    if months != int(months):
-        return None
-    return _add_months(now, int(months))
+    whole_months = int(months)
+    return _add_months(now, whole_months) + timedelta(days=round((months - whole_months) * 30))
 
 def _named_day_date(day_match, now: datetime) -> Tuple[datetime, bool]:
     """The day meant by a NAMED_DAY_PATTERN match, at the current time of day.
@@ -1616,22 +1615,26 @@ def _relative_offset_reminder(text: str, now: datetime) -> Optional[Tuple[dateti
 
     Days and longer keep the current time of day unless a clock time next to the offset
     ("en 3 días 18:00") or a part of the day ("en 3 días a la tarde") says otherwise.
+    They also give way to a day named earlier in the message: in "mañana avisar que en
+    2 semanas viajo" the reminder is for tomorrow and the offset is part of its text.
     Returns (datetime, reminder_text) or None.
     """
     offset_match = re.search(RELATIVE_OFFSET_PATTERN, text, re.IGNORECASE)
     if not offset_match:
         return None
 
+    unit = offset_match.group('unit')
+    lands_on_another_day = _is_day_unit(unit)
+    if lands_on_another_day and re.search(NAMED_DAY_PATTERN, text[:offset_match.start()], re.IGNORECASE):
+        return None
+
     amount = _offset_amount(offset_match.group('amount'))
     if offset_match.group('half'):
         amount += 0.5
-    unit = offset_match.group('unit')
     datetime_obj = _add_offset(now, amount, unit)
-    if datetime_obj is None:
-        return None
 
     spans_to_remove = [offset_match.span()]
-    if _is_day_unit(unit):
+    if lands_on_another_day:
         clock_match = _clock_time_next_to(text, offset_match)
         moment = _find_moment_of_day(text, on_another_day=True)
         if clock_match:
