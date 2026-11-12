@@ -181,7 +181,7 @@ Manejo tres funcionalidades principales:
 • `/completar <id>` - Finalizar repetición
 
 **Lenguaje natural:**
-• "Mañana a las 2 recordame el turno médico"
+• "Mañana a las 14 recordame el turno médico"
 • "En 45 minutos recordame sacar la pizza"
 
 ══════════════════════
@@ -1307,6 +1307,26 @@ SHORT_DATE_PATTERN = (
     r'(?:el\s+)?(?P<day_number>\d{1,2})[\/\-](?P<month_number>\d{1,2})\b(?![\-:])'
 )
 
+# "el 20" or "el 20 de este mes" (day of the month), but not "el 2 por 1", "el 3x2" or "el 5 de copas"
+DAY_OF_MONTH_PATTERN = (
+    r'\bel\s+(?P<day_number>\d{1,2})\b(?![\/\-:])(?:\s+de\s+este\s+mes\b)?'
+    r'(?!\s*(?:por|x)\s*\d)(?!\s+de\b)'
+)
+
+# What follows the order and is not part of the reminder: "recordame que...", "acordarme de..."
+_REQUEST_CONNECTOR = r'(?:\s+(?:de\s+que|que|de)\b)?'
+
+# The order itself. These forms are never the content, so they are dropped wherever they are:
+# "mañana a las 2 recordame que tengo turno", "el viernes haceme acordar de comprar cerveza".
+REQUEST_PATTERN = (
+    r'\b(?:record[aá]me|recu[eé]rdame|recordarme|av[ií]same|avisarme'
+    r'|hac[eé]me\s+acordar|hazme\s+acordar|acordarme)\b' + _REQUEST_CONNECTOR
+)
+
+# These are the order only when they open the message; elsewhere they are content
+# ("mañana acordar precio con el cliente", "pagar el aviso de vencimiento").
+LEADING_REQUEST_PATTERN = r'^\s*(?:recordar|acordar|aviso)\b' + _REQUEST_CONNECTOR
+
 # "el lunes 29" or "lunes 29" (weekday + day of the month), but not "lunes 18:00" or "lunes 9 pm"
 WEEKDAY_AND_DAY_PATTERN = (
     r'\b(?:el\s+)?(?P<weekday>' + _WEEKDAY_NAMES + r')\s+(?P<day_number>\d{1,2})\b'
@@ -1366,10 +1386,6 @@ def _clock_time_next_to(text: str, anchor_match):
             return clock_match
 
     return None
-
-def _has_clock_with_minutes(text: str) -> bool:
-    """True when the text has a time written with a colon ("15:30")."""
-    return bool(re.search(r'\b\d{1,2}:\d{2}\b', text))
 
 def _find_moment_of_day(text: str, on_another_day: bool = False):
     """Find a part of the day written with no hour ("a la tarde", "esta noche", "al mediodía").
@@ -1454,16 +1470,18 @@ def _smart_hour_parse(hour: int, minute: int, now: datetime, period: Optional[st
 
     return None
 
-def _hour_on_day(day: datetime, hour: int, minute: int, now: datetime, period: Optional[str] = None) -> datetime:
+def _hour_on_day(day: datetime, hour: int, minute: int, now: datetime, period: Optional[str] = None,
+                 hour_as_written: bool = False) -> datetime:
     """Put a written hour on a day that is already known (e.g., 'mañana a las 9').
 
     On any day other than today the hour is taken as written: 1-11 are the morning, and the
-    afternoon needs 13-23 or a hint ("de la tarde", "pm").
+    afternoon needs 13-23 or a hint ("de la tarde", "pm"). Today, 1-11 mean the evening once
+    the morning passed, unless hour_as_written asks to keep them as they are.
     The day is respected even if the result is in the past; the caller rejects past dates.
     """
     hour24, ambiguous, day_offset = _resolve_hour(hour, period)
 
-    if ambiguous and day.date() == now.date():
+    if ambiguous and day.date() == now.date() and not hour_as_written:
         # Today: the morning reading if it is still ahead, otherwise the evening one
         morning = day.replace(hour=hour24, minute=minute, second=0, microsecond=0)
         if morning <= now:
@@ -1529,7 +1547,9 @@ def _named_day_date(day_match, now: datetime) -> Tuple[datetime, bool]:
 def _hour_on_named_day(day_match, hour: int, minute: int, now: datetime, period: Optional[str]) -> datetime:
     """Put a written hour on the day named by a NAMED_DAY_PATTERN match."""
     day, may_mean_next_week = _named_day_date(day_match, now)
-    datetime_obj = _hour_on_day(day, hour, minute, now, period)
+    # A weekday name that is today's keeps the hour as written: "el jueves a las 10" said on
+    # Thursday afternoon is next Thursday at 10:00, not tonight at 22:00
+    datetime_obj = _hour_on_day(day, hour, minute, now, period, hour_as_written=may_mean_next_week)
     if may_mean_next_week and datetime_obj <= now:
         datetime_obj = _hour_on_day(day + timedelta(days=7), hour, minute, now, period)
     return datetime_obj
@@ -1543,7 +1563,8 @@ def _day_next_to_time(text: str, time_match):
     """
     candidates = (
         re.search(NAMED_DAY_PATTERN + r'\s*$', text[:time_match.start()], re.IGNORECASE),
-        re.compile(r'\s*' + NAMED_DAY_PATTERN, re.IGNORECASE).match(text, time_match.end()),
+        # "a las 10 mañana", "a las 10 de mañana"
+        re.compile(r'\s*(?:de\s+)?' + NAMED_DAY_PATTERN, re.IGNORECASE).match(text, time_match.end()),
         re.match(NAMED_DAY_PATTERN, text, re.IGNORECASE)
     )
 
@@ -1554,8 +1575,14 @@ def _day_next_to_time(text: str, time_match):
     return None
 
 def _remove_spans(text: str, spans: List[Tuple[int, int]]) -> str:
-    """Cut (start, end) spans out of a text, leaving single spaces."""
+    """Cut (start, end) spans out of a text, leaving single spaces.
+
+    A "de" or "para" right before a span goes with it: "el turno de mañana", "para el viernes".
+    """
     for start, end in sorted(spans, reverse=True):
+        dangling = re.search(r'\b(?:de|para)\s+$', text[:start], re.IGNORECASE)
+        if dangling:
+            start = dangling.start()
         text = text[:start] + ' ' + text[end:]
     return re.sub(r'\s+', ' ', text).strip()
 
@@ -1648,9 +1675,37 @@ def _relative_offset_reminder(text: str, now: datetime) -> Optional[Tuple[dateti
 
     return datetime_obj, _remove_spans(text, spans_to_remove)
 
-def _text_or_default(reminder_text: str) -> str:
-    """Name for a reminder written with a date and nothing else ("mañana 18:00")."""
-    return reminder_text or "recordatorio"
+def _says_when_before(text: str, position: int) -> bool:
+    """True when the text before `position` already says when the reminder is.
+
+    A named day, a time, a part of the day or an offset. A time written right before does
+    not count: in "a las 10 el 20 pagar" the day comes with its hour.
+    """
+    prefix = text[:position]
+    if re.search(TIME_EXPRESSION_PATTERN + r'\s*$', prefix, re.IGNORECASE):
+        return False
+
+    when_patterns = (NAMED_DAY_PATTERN, TIME_EXPRESSION_PATTERN, MOMENT_OF_DAY_PATTERN, RELATIVE_OFFSET_PATTERN)
+    return any(re.search(pattern, prefix, re.IGNORECASE) for pattern in when_patterns)
+
+def _strip_request_words(text: str) -> str:
+    """Take the order out of a message, leaving the date and the reminder ("recordame que...")."""
+    text = re.sub(r'^\s*\/recordar\b\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(REQUEST_PATTERN, ' ', text, flags=re.IGNORECASE)
+    text = re.sub(LEADING_REQUEST_PATTERN, ' ', text, flags=re.IGNORECASE)
+    return re.sub(r'\s+', ' ', text).strip()
+
+def _clean_reminder_text(text: str) -> str:
+    """Trim what the order and the date leave around the reminder.
+
+    A leading "que" / "de" ("avisame en 2 horas que saque la ropa"), a dangling "para" / "de" /
+    "del" / "el" at the end ("comprar pan para mañana") and loose punctuation.
+    A "de" before a number is kept: "de 10 a 12 curso".
+    """
+    text = text.strip(' ,;:')
+    text = re.sub(r'^(?:de\s+que|que|de)\s+(?!\d)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:\s+(?:para|de|del|el|que))+$', '', text, flags=re.IGNORECASE)
+    return text.strip(' ,;:')
 
 def _smart_weekday_day_parse(weekday: str, day: int, now: datetime) -> datetime:
     """Parse weekday + day (e.g., 'lunes 29')."""
@@ -1869,29 +1924,20 @@ def extract_date_and_text(text: str, now: datetime = None):
 
     now: the moment the message is read; defaults to the current time. Tests pass a fixed one.
     It drives everything except the dateparser fallbacks at the end, which read the real clock.
+    Returns (datetime, reminder_text). The text is empty when the message is only a date,
+    and both are None when no date is found.
     """
-
-    # Clean text
-    text = text.strip()
-
-    # Remove command words if they exist
-    text = re.sub(r'^\/(?:recordar)\s*', '', text, flags=re.IGNORECASE)
-
-    # Remove request words
-    request_words = [
-        'recordame', 'recordar', 'avisame', 'aviso', 'haceme acordar',
-        'acordar', 'que', 'de que', 'de'
-    ]
-
-    for word in request_words:
-        text = re.sub(rf'\b{word}\b', '', text, flags=re.IGNORECASE)
-
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    # Get current time for smart inference
     if now is None:
         now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
 
+    datetime_obj, reminder_text = _find_date_and_text(_strip_request_words(text), now)
+    if datetime_obj is None:
+        return None, None
+
+    return datetime_obj, _clean_reminder_text(reminder_text)
+
+def _find_date_and_text(text: str, now: datetime):
+    """Find the date in a message with no order in it; returns (datetime, rest of the text)."""
     # "25 de diciembre" or "el 25 de diciembre de 2026", where it reads as a date and not a street
     month_date = _find_month_name_date(text)
     if month_date:
@@ -1908,8 +1954,10 @@ def extract_date_and_text(text: str, now: datetime = None):
         (FULL_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group('day_number')), int(m.group('month_number')), now, int(m.group('year')))),
         # "el lunes 29" or "lunes 29" (weekday + day of the month)
         (WEEKDAY_AND_DAY_PATTERN, lambda m: _smart_weekday_day_parse(m.group('weekday'), int(m.group('day_number')), now)),
-        # "el 20" (day of current month/year)
-        (r'\bel\s+(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
+        # "el 20" (day of current month/year), unless the message already said when before it:
+        # in "el lunes llevar el 5" the date is Monday, in "a las 21 ver el 13" it is tonight
+        (DAY_OF_MONTH_PATTERN, lambda m: None if _says_when_before(text, m.start())
+            else _smart_day_parse(int(m.group('day_number')), now)),
         # "el 20/12" or "20/12" (day/month of current year)
         (SHORT_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group('day_number')), int(m.group('month_number')), now))
     ]
@@ -1953,34 +2001,32 @@ def extract_date_and_text(text: str, now: datetime = None):
         if clock_match:
             hour, minute, period = _parse_time_match(clock_match, clock_notation=True)
             datetime_obj = _hour_on_named_day(day_match, hour, minute, now, period)
-            clean_text = _remove_spans(text, [clock_match.span(), day_match.span('day')])
-            return datetime_obj, _text_or_default(clean_text)
+            return datetime_obj, _remove_spans(text, [clock_match.span(), day_match.span('day')])
 
-    # From here on there is no hour. A time with minutes somewhere else in the message
-    # ("mañana reunión 15:30") is left to the fallbacks below instead of being ignored.
-    if not _has_clock_with_minutes(text):
-        # A named day: "el sábado ir a la feria", "mañana a la tarde llamar al plomero"
-        day_match = re.search(NAMED_DAY_PATTERN, text, re.IGNORECASE)
-        if day_match:
-            spans_to_remove = [day_match.span('day')]
-            hour, period = DEFAULT_REMINDER_HOUR, CLOCK_PERIOD
-            names_today = normalize_text_for_search(day_match.group('relative') or '') == 'hoy'
-            moment = _find_moment_of_day(text, on_another_day=not names_today)
-            if moment:
-                moment_match, hour, period = moment
-                spans_to_remove.append(moment_match.span())
-            datetime_obj = _hour_on_named_day(day_match, hour, 0, now, period)
-            return datetime_obj, _text_or_default(_remove_spans(text, spans_to_remove))
-
-        # Only a part of the day: "esta noche sacar la basura", "a la tarde llamar"
-        moment = _find_moment_of_day(text)
+    # A named day with no hour: "el sábado ir a la feria", "mañana a la tarde llamar al plomero".
+    # A time written away from the day stays in the reminder: "mañana ir al médico 15:30" is
+    # sent tomorrow at the default hour and says "ir al médico 15:30".
+    day_match = re.search(NAMED_DAY_PATTERN, text, re.IGNORECASE)
+    if day_match:
+        spans_to_remove = [day_match.span('day')]
+        hour, period = DEFAULT_REMINDER_HOUR, CLOCK_PERIOD
+        names_today = normalize_text_for_search(day_match.group('relative') or '') == 'hoy'
+        moment = _find_moment_of_day(text, on_another_day=not names_today)
         if moment:
             moment_match, hour, period = moment
-            if moment_match.group('today'):
-                datetime_obj = _hour_on_day(now, hour, 0, now, period)
-            else:
-                datetime_obj = _smart_hour_parse(hour, 0, now, period)
-            return datetime_obj, _text_or_default(_remove_spans(text, [moment_match.span()]))
+            spans_to_remove.append(moment_match.span())
+        datetime_obj = _hour_on_named_day(day_match, hour, 0, now, period)
+        return datetime_obj, _remove_spans(text, spans_to_remove)
+
+    # Only a part of the day: "esta noche sacar la basura", "a la tarde llamar"
+    moment = _find_moment_of_day(text)
+    if moment:
+        moment_match, hour, period = moment
+        if moment_match.group('today'):
+            datetime_obj = _hour_on_day(now, hour, 0, now, period)
+        else:
+            datetime_obj = _smart_hour_parse(hour, 0, now, period)
+        return datetime_obj, _remove_spans(text, [moment_match.span()])
 
     # Try with dateparser
     # First try simple date patterns without specific time
@@ -2028,8 +2074,8 @@ def extract_date_and_text(text: str, now: datetime = None):
         if parsed_date:
             if parsed_date.tzinfo is None:
                 parsed_date = pytz.timezone('America/Argentina/Buenos_Aires').localize(parsed_date)
-            # If it parses everything, assume no additional text
-            return parsed_date, "recordatorio"
+            # If it parses everything, there is no reminder text
+            return parsed_date, ""
         return None, None
 
     # Parse the found date
@@ -2046,14 +2092,7 @@ def extract_date_and_text(text: str, now: datetime = None):
     if parsed_date.tzinfo is None:
         parsed_date = pytz.timezone('America/Argentina/Buenos_Aires').localize(parsed_date)
 
-    # Clean remaining text
-    remaining_text = re.sub(r'^\s*que\s+', '', remaining_text, flags=re.IGNORECASE)
-    remaining_text = remaining_text.strip()
-
-    if not remaining_text:
-        remaining_text = "recordatorio"
-
-    return parsed_date, remaining_text
+    return parsed_date, remaining_text.strip()
 
 async def important_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /importante command for important repeating reminders."""
@@ -2117,6 +2156,10 @@ async def process_important_reminder(update: Update, context: ContextTypes.DEFAU
 
         if not _is_future(parsed_date):
             await update.message.reply_text("❌ La fecha debe ser en el futuro.")
+            return
+
+        if not remaining_text:
+            await update.message.reply_text("❌ Falta el texto del recordatorio.")
             return
 
         # Extract category if present
@@ -2365,7 +2408,7 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'examples': [
                 '/recordar mañana a las 10 reunión con Juan',
                 '/recordar en una hora tomar medicamento',
-                'mañana a las 2 recordame que tengo turno médico',
+                'mañana a las 14 recordame que tengo turno médico',
                 'recordame en 45 minutos sacar la pizza',
                 'haceme acordar el viernes comprar cerveza',
                 'avisame pasado mañana llamar a mamá'
@@ -2375,6 +2418,8 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '🕐 Horarios inteligentes (AM/PM automático)',
                 '📅 Fechas flexibles (mañana, viernes, 25/12)',
                 '⚡ Fechas relativas (en una hora, en 30 minutos)',
+                '🕘 Sin hora, el aviso llega a las 09:00',
+                '📌 La hora del aviso va con `a las` o pegada al día: `mañana ir al médico 15:30` avisa a las 09:00 y guarda "Ir al médico 15:30"',
                 '🏷️ Categorización automática inteligente',
                 '🔔 Notificaciones puntuales y precisas'
             ]

@@ -169,11 +169,10 @@ class DayWordPosition(HourCases):
         ], at(15))
 
     def test_day_word_inside_the_reminder_stays_in_the_text(self):
-        # "que" and "de" are dropped by the request-word cleanup (issue #5)
         self.check([
-            ('a las 20 avisar que mañana no voy', ('11/11 20:00', 'avisar mañana no voy')),
+            ('a las 20 avisar que mañana no voy', ('11/11 20:00', 'avisar que mañana no voy')),
             ('a las 18 comprar pan para hoy y mañana', ('11/11 18:00', 'comprar pan para hoy y mañana')),
-            ('a las 9 llamar para confirmar el turno de mañana', ('11/11 21:00', 'llamar para confirmar el turno mañana')),
+            ('a las 9 llamar para confirmar el turno de mañana', ('11/11 21:00', 'llamar para confirmar el turno de mañana')),
         ], at(15))
 
 
