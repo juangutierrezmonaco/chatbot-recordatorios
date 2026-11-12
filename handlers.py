@@ -1675,6 +1675,19 @@ def _relative_offset_reminder(text: str, now: datetime) -> Optional[Tuple[dateti
 
     return datetime_obj, _remove_spans(text, spans_to_remove)
 
+def _says_when_before(text: str, position: int) -> bool:
+    """True when the text before `position` already says when the reminder is.
+
+    A named day, a time, a part of the day or an offset. A time written right before does
+    not count: in "a las 10 el 20 pagar" the day comes with its hour.
+    """
+    prefix = text[:position]
+    if re.search(TIME_EXPRESSION_PATTERN + r'\s*$', prefix, re.IGNORECASE):
+        return False
+
+    when_patterns = (NAMED_DAY_PATTERN, TIME_EXPRESSION_PATTERN, MOMENT_OF_DAY_PATTERN, RELATIVE_OFFSET_PATTERN)
+    return any(re.search(pattern, prefix, re.IGNORECASE) for pattern in when_patterns)
+
 def _strip_request_words(text: str) -> str:
     """Take the order out of a message, leaving the date and the reminder ("recordame que...")."""
     text = re.sub(r'^\s*\/recordar\b\s*', '', text, flags=re.IGNORECASE)
@@ -1687,9 +1700,10 @@ def _clean_reminder_text(text: str) -> str:
 
     A leading "que" / "de" ("avisame en 2 horas que saque la ropa"), a dangling "para" / "de" /
     "del" / "el" at the end ("comprar pan para mañana") and loose punctuation.
+    A "de" before a number is kept: "de 10 a 12 curso".
     """
     text = text.strip(' ,;:')
-    text = re.sub(r'^(?:de\s+que|que|de)\s+', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^(?:de\s+que|que|de)\s+(?!\d)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'(?:\s+(?:para|de|del|el|que))+$', '', text, flags=re.IGNORECASE)
     return text.strip(' ,;:')
 
@@ -1940,9 +1954,9 @@ def _find_date_and_text(text: str, now: datetime):
         (FULL_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group('day_number')), int(m.group('month_number')), now, int(m.group('year')))),
         # "el lunes 29" or "lunes 29" (weekday + day of the month)
         (WEEKDAY_AND_DAY_PATTERN, lambda m: _smart_weekday_day_parse(m.group('weekday'), int(m.group('day_number')), now)),
-        # "el 20" (day of current month/year), unless a day was already named before it:
-        # in "el lunes llevar el 5" the date is Monday
-        (DAY_OF_MONTH_PATTERN, lambda m: None if re.search(NAMED_DAY_PATTERN, text[:m.start()], re.IGNORECASE)
+        # "el 20" (day of current month/year), unless the message already said when before it:
+        # in "el lunes llevar el 5" the date is Monday, in "a las 21 ver el 13" it is tonight
+        (DAY_OF_MONTH_PATTERN, lambda m: None if _says_when_before(text, m.start())
             else _smart_day_parse(int(m.group('day_number')), now)),
         # "el 20/12" or "20/12" (day/month of current year)
         (SHORT_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group('day_number')), int(m.group('month_number')), now))

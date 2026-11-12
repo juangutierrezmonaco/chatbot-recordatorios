@@ -72,6 +72,8 @@ class NothingOfTheDateIsLeft(ParsingCases):
         self.check([
             ('mañana a las 10: ir al médico', ('12/11 10:00', 'ir al médico')),
             ('mañana, comprar pan', ('12/11 09:00', 'comprar pan')),
+            ('recordame, mañana a las 10 ir al médico', ('12/11 10:00', 'ir al médico')),
+            ('mañana de 10 a 12 curso', ('12/11 09:00', 'de 10 a 12 curso')),
         ], at(15))
 
 
@@ -88,6 +90,16 @@ class NumbersInTheReminderAreNotDates(ParsingCases):
             ('comprar el 2 por 1 a las 18', ('11/11 18:00', 'comprar el 2 por 1')),
             ('a las 18 aprovechar el 3x2 del super', ('11/11 18:00', 'aprovechar el 3x2 del super')),
             ('a las 21 ver el 5 de copas', ('11/11 21:00', 'ver el 5 de copas')),
+        ], at(15))
+
+    def test_el_n_after_the_message_already_said_when(self):
+        self.check([
+            ('a las 21 ver el 13', ('11/11 21:00', 'ver el 13')),
+            ('esta noche ver el 13', ('11/11 21:00', 'ver el 13')),
+            ('a la noche tomar el 60 a casa', ('11/11 21:00', 'tomar el 60 a casa')),
+            ('en 2 horas ver el 9', ('11/11 17:00', 'ver el 9')),
+            # The hour right before the day belongs to it
+            ('a las 10 el 20 pagar', ('20/11 10:00', 'pagar')),
         ], at(15))
 
     def test_el_n_is_still_a_date(self):
