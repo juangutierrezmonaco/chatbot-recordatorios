@@ -448,10 +448,17 @@ Encuentra: "A Cindy le gustan los Sugus rosas y amarillos"
 El bot entiende múltiples formatos de fecha y hora:
 
 #### Fechas Relativas
-- `mañana`, `pasado mañana`
-- `el lunes`, `el martes`, `el viernes`
-- `la semana que viene`
-- `el mes que viene`
+- `hoy`, `mañana`, `pasado mañana`
+- `el lunes`, `el sábado`, `el viernes que viene`, `el próximo martes` → sin hora, a las 09:00
+- `en 30 minutos`, `en 2 horas`, `en una hora y media`, `en 90 segundos`
+- `en 3 días`, `en 2 semanas`, `en 2 meses`, `en 1 año` → a la misma hora que ahora, salvo que se indique otra (`en 3 días a las 10`)
+
+#### Momentos del Día
+- `mañana a la tarde`, `el viernes a la noche`, `esta noche`, `al mediodía`, `a medianoche`
+- Mañana 09:00, mediodía 12:00, tarde 16:00, noche 21:00
+
+#### Plazos
+- `antes de las 17` → avisa una hora antes (16:00); si falta menos de una hora, a mitad de camino
 
 #### Horas Inteligentes
 - `a las 9` → la próxima vez que el reloj marque las 9 (hoy a la mañana o a la noche, o mañana)
@@ -467,7 +474,7 @@ El bot entiende múltiples formatos de fecha y hora:
 - `25/09/2025`, `25/09/25` → fecha completa, tal cual está escrita
 - `25/09` → este año, o el próximo si ya pasó
 - `25 de diciembre`, `el 25 de diciembre de 2027`, `viernes 25 de diciembre` → cuenta como fecha al comienzo del mensaje, después de `el` o junto a la hora; así `ir a 9 de Julio 1234` sigue siendo texto
-- `el 15` (día 15 del mes actual)
+- `el 15` (día 15 del mes actual, o del próximo si ya pasó); si el mes no tiene ese día se usa el último: `el 31` en noviembre es el 30
 - `lunes 29` (lunes más cercano que caiga día 29)
 
 #### Fecha y Hora Juntas

@@ -1,4 +1,5 @@
 import re
+import calendar
 import logging
 from datetime import datetime, timedelta
 from typing import Tuple, List, Optional
@@ -1086,31 +1087,31 @@ def _is_future(datetime_obj: datetime) -> bool:
         datetime_obj = timezone.localize(datetime_obj)
     return datetime_obj > datetime.now(timezone)
 
+def _add_months(moment: datetime, months: int) -> datetime:
+    """Same day and time some months ahead; the day is capped to the length of that month."""
+    month_index = moment.month - 1 + months
+    year = moment.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(moment.day, calendar.monthrange(year, month)[1])
+    return moment.replace(year=year, month=month, day=day)
+
 def _smart_day_parse(day: int, now: datetime) -> datetime:
-    """Parse a day of the month intelligently (e.g., 'el 20')."""
+    """Parse a day of the month intelligently (e.g., 'el 20').
+
+    A day the month does not have means its last day: 'el 31' in November is the 30th.
+    """
     if day < 1 or day > 31:
         return None
 
-    # Try current month first
-    try:
-        target_date = now.replace(day=day, hour=9, minute=0, second=0, microsecond=0)
-        # If the date is in the past, try next month
-        if target_date <= now:
-            if now.month == 12:
-                target_date = target_date.replace(year=now.year + 1, month=1)
-            else:
-                target_date = target_date.replace(month=now.month + 1)
-        return target_date
-    except ValueError:
-        # Day doesn't exist in current month, try next month
-        try:
-            if now.month == 12:
-                target_date = now.replace(year=now.year + 1, month=1, day=day, hour=9, minute=0, second=0, microsecond=0)
-            else:
-                target_date = now.replace(month=now.month + 1, day=day, hour=9, minute=0, second=0, microsecond=0)
+    # This month, or the next one if that day already passed
+    for months_ahead in (0, 1):
+        month_start = _add_months(now.replace(day=1), months_ahead)
+        last_day = calendar.monthrange(month_start.year, month_start.month)[1]
+        target_date = month_start.replace(day=min(day, last_day), hour=9, minute=0, second=0, microsecond=0)
+        if target_date > now:
             return target_date
-        except ValueError:
-            return None
+
+    return None
 
 def _smart_date_parse(day: int, month: int, now: datetime, year: int = None) -> datetime:
     """Parse day/month intelligently (e.g., '20/12').
@@ -1197,6 +1198,8 @@ def _smart_weekday_day_parse_with_past(weekday_str: str, day: int, now: datetime
 
     return None
 
+_DAY_PERIOD_NAMES = r'ma[ñn]ana|tarde|noche|madrugada'
+
 # What may follow the numbers of a time: the "hs" suffix and the part of the day
 # ("pm", "de la noche", "del mediodía").
 # The "de" is optional because request words (including "de") are stripped before parsing.
@@ -1204,18 +1207,67 @@ _TIME_TAIL = (
     r'(?:\s*(?:hs|hrs|horas|h)\b\.?)?'
     r'(?:'
     r'\s*(?P<meridiem>[ap])\.?\s?m\b\.?'
-    r'|\s+(?:(?:de|por)\s+)?la\s+(?P<period>ma[ñn]ana|tarde|noche|madrugada)\b'
+    r'|\s+(?:(?:de|por)\s+)?la\s+(?P<period>' + _DAY_PERIOD_NAMES + r')\b'
     r'|\s+(?:(?:del?|al)\s+)?(?P<noon>mediod[ií]a)\b'
     r')?'
 )
 
+# What tells that a bare number is an hour: "18hs", "9 pm", "9 de la noche"
+_HOUR_HINT = (
+    r'\s*(?:hs|hrs)\b'
+    r'|\s*[ap]\.?\s?m\b'
+    r'|\s+(?:(?:de|por)\s+)?la\s+(?:' + _DAY_PERIOD_NAMES + r')\b'
+)
+
 # Time of day introduced by "a las": "a las 9", "a las 9:30", "a las 9.30", "a las 21hs",
 # "a las 9 pm", "a las 9 de la noche", "a las 12 del mediodía".
-TIME_EXPRESSION_PATTERN = r'\ba\s*las?\s+(\d{1,2})(?:[:.](\d{2}))?(?!\d)' + _TIME_TAIL
+# "antes de las 9" is a deadline: the reminder goes some time before it.
+TIME_EXPRESSION_PATTERN = (
+    r'\b(?:(?P<before>antes\s+(?:de\s+)?las?)|a\s*las?)\s+'
+    r'(?P<hour>\d{1,2})(?:[:.](?P<minute>\d{2}))?(?!\d)' + _TIME_TAIL
+)
 
-# Clock notation with no "a las": "09:30", "18hs". Read as written (24h) unless a hint follows.
-CLOCK_TIME_PATTERN = r'\b(\d{1,2})(?::(\d{2})(?!\d)|(?=\s*(?:hs|hrs)\b))' + _TIME_TAIL
+# Clock notation with no "a las": "09:30", "18hs", "9 pm", "9 de la noche".
+# Read as written (24h) unless a hint follows.
+CLOCK_TIME_PATTERN = (
+    r'\b(?P<hour>\d{1,2})(?::(?P<minute>\d{2})(?!\d)|(?=' + _HOUR_HINT + r'))' + _TIME_TAIL
+)
 CLOCK_PERIOD = '24h'
+
+# Hour for a date written with no time ("el viernes comprar cerveza")
+DEFAULT_REMINDER_HOUR = 9
+
+# How long before an "antes de las X" deadline the reminder is sent
+REMIND_BEFORE_DEADLINE = timedelta(hours=1)
+
+# Part of the day with no hour: "a la tarde", "por la noche", "esta noche", "al mediodía".
+# "para esta noche" names what the reminder is for, not when to send it.
+MOMENT_OF_DAY_PATTERN = (
+    r'\b(?:(?<!\bpara\s)(?P<today>esta)\s+|(?:a|por|en)\s+la\s+)(?P<moment>ma[ñn]ana|tarde|noche)\b'
+    r'|\b(?:al|a\s+la|a)\s+(?P<fixed>mediod[ií]a|medianoche)\b'
+)
+
+# (hour, period) for each part of the day; midnight is "12 de la noche"
+MOMENT_HOURS = {
+    'manana': (9, CLOCK_PERIOD), 'mediodia': (12, CLOCK_PERIOD), 'tarde': (16, CLOCK_PERIOD),
+    'noche': (21, CLOCK_PERIOD), 'medianoche': (12, 'noche')
+}
+
+NUMBER_WORDS = {
+    'un': 1, 'una': 1, 'uno': 1, 'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5,
+    'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9, 'diez': 10, 'media': 0.5, 'medio': 0.5
+}
+
+_WHOLE_AMOUNT = r'\d+|una?|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez'
+_DAY_UNITS = r'd[ií]as?|d|semanas?|mes(?:es)?|a[ñn]os?'
+
+# "en 30 minutos", "en 2hs", "en una hora y media", "en 3 días", "en 2 semanas", "en 2 meses".
+# The word boundary after the unit keeps "meses" from being read as "m" of minutes.
+RELATIVE_OFFSET_PATTERN = (
+    r'\ben\s+(?P<amount>' + _WHOLE_AMOUNT + r'|medi[ao])\s*'
+    r'(?P<unit>segundos?|segs?|minutos?|mins?|m|horas?|hs|hrs?|h|' + _DAY_UNITS + r')\b'
+    r'(?P<half>\s+y\s+medi[ao]\b)?'
+)
 
 WEEKDAY_NUMBERS = {
     'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3,
@@ -1255,12 +1307,20 @@ SHORT_DATE_PATTERN = (
     r'(?:el\s+)?(?P<day_number>\d{1,2})[\/\-](?P<month_number>\d{1,2})\b(?![\-:])'
 )
 
-# Day named next to a time: "hoy", "mañana", "pasado mañana", "el viernes", "el viernes que viene".
+# "el lunes 29" or "lunes 29" (weekday + day of the month), but not "lunes 18:00" or "lunes 9 pm"
+WEEKDAY_AND_DAY_PATTERN = (
+    r'\b(?:el\s+)?(?P<weekday>' + _WEEKDAY_NAMES + r')\s+(?P<day_number>\d{1,2})\b'
+    r'(?![:.\/\-]\d)(?!' + _HOUR_HINT + r')'
+)
+
+# A day said by name: "hoy", "mañana", "pasado mañana", "el viernes", "el viernes que viene",
+# "en 3 días", "en 2 semanas".
 # "la mañana" / "esta mañana" are a part of the day, not tomorrow.
 # "que" is stripped before parsing, so "viernes que viene" arrives as "viernes viene".
 NAMED_DAY_PATTERN = (
     r'(?P<day>\b(?:'
     r'(?P<relative>pasado\s+ma[ñn]ana|(?<!\bla\s)(?<!\besta\s)ma[ñn]ana|hoy)'
+    r'|(?P<offset>en\s+(?P<offset_amount>' + _WHOLE_AMOUNT + r')\s*(?P<offset_unit>' + _DAY_UNITS + r'))'
     r'|(?:(?:el|este)\s+)?(?P<next_before>pr[oó]ximo\s+)?'
     r'(?P<weekday>' + _WEEKDAY_NAMES + r')'
     r'(?P<next_after>\s+(?:que\s+)?viene|\s+pr[oó]ximo)?'
@@ -1274,8 +1334,8 @@ def _parse_time_match(match, clock_notation: bool = False) -> Optional[Tuple[int
     or CLOCK_PERIOD for clock notation with no hint ('9:30' is 09:30, never 21:30).
     Returns None when the numbers are not a valid time.
     """
-    hour = int(match.group(1))
-    minute = int(match.group(2)) if match.group(2) else 0
+    hour = int(match.group('hour'))
+    minute = int(match.group('minute')) if match.group('minute') else 0
     if hour > 23 or minute > 59:
         return None
 
@@ -1306,6 +1366,37 @@ def _clock_time_next_to(text: str, anchor_match):
             return clock_match
 
     return None
+
+def _has_clock_with_minutes(text: str) -> bool:
+    """True when the text has a time written with a colon ("15:30")."""
+    return bool(re.search(r'\b\d{1,2}:\d{2}\b', text))
+
+def _find_moment_of_day(text: str, on_another_day: bool = False):
+    """Find a part of the day written with no hour ("a la tarde", "esta noche", "al mediodía").
+
+    on_another_day: the message already names a day that is not today, so "esta noche"
+    cannot be its time and is skipped.
+    Returns (match, hour, period) or None. The match has the 'today' group set for "esta ...".
+    """
+    for match in re.finditer(MOMENT_OF_DAY_PATTERN, text, re.IGNORECASE):
+        if on_another_day and match.group('today'):
+            continue
+
+        moment = normalize_text_for_search(match.group('moment') or match.group('fixed'))
+        hour, period = MOMENT_HOURS[moment]
+        return match, hour, period
+
+    return None
+
+def _remind_before(deadline: datetime, now: datetime) -> datetime:
+    """When to remind about something due "antes de las X".
+
+    REMIND_BEFORE_DEADLINE ahead of it; if less than that is left, halfway between now and it.
+    """
+    reminder = deadline - REMIND_BEFORE_DEADLINE
+    if reminder <= now < deadline:
+        reminder = (now + (deadline - now) / 2).replace(second=0, microsecond=0)
+    return reminder
 
 def _resolve_hour(hour: int, period: Optional[str]) -> Tuple[int, bool, int]:
     """Turn a written hour into a 24h hour.
@@ -1381,33 +1472,66 @@ def _hour_on_day(day: datetime, hour: int, minute: int, now: datetime, period: O
     target_day = day + timedelta(days=day_offset)
     return target_day.replace(hour=hour24, minute=minute, second=0, microsecond=0)
 
-def _named_day_offset(day_match, now: datetime) -> Tuple[int, bool]:
-    """Days from today for a NAMED_DAY_PATTERN match.
+def _offset_amount(word: str) -> float:
+    """Number written in digits or words ('3', 'dos', 'media')."""
+    return int(word) if word.isdigit() else NUMBER_WORDS[normalize_text_for_search(word)]
 
-    Returns (days_from_today, may_mean_next_week). The flag is set for a weekday name that
-    is today's: it means today, or next week if the time already passed.
+def _is_day_unit(unit: str) -> bool:
+    """True for days, weeks, months and years: offsets that land on another day."""
+    return bool(re.fullmatch(_DAY_UNITS, unit, re.IGNORECASE))
+
+def _add_offset(now: datetime, amount: float, unit: str) -> datetime:
+    """Moment that is `amount` units from now ('en 3 días', 'en 90 segundos', 'en 2 meses').
+
+    Days and longer keep the time of day. Half a month counts as 15 days.
+    """
+    unit = normalize_text_for_search(unit)
+    if unit.startswith('seg'):
+        return now + timedelta(seconds=amount)
+    if unit.startswith('min') or unit == 'm':
+        return now + timedelta(minutes=amount)
+    if unit.startswith('h'):
+        return now + timedelta(hours=amount)
+    if unit.startswith('d'):
+        return now + timedelta(days=amount)
+    if unit.startswith('sem'):
+        return now + timedelta(weeks=amount)
+
+    months = amount * (12 if unit.startswith('a') else 1)
+    whole_months = int(months)
+    return _add_months(now, whole_months) + timedelta(days=round((months - whole_months) * 30))
+
+def _named_day_date(day_match, now: datetime) -> Tuple[datetime, bool]:
+    """The day meant by a NAMED_DAY_PATTERN match, at the current time of day.
+
+    Returns (day, may_mean_next_week). The flag is set for a weekday name that is today's:
+    it means today, or next week if the time already passed.
     """
     relative = day_match.group('relative')
     if relative:
         normalized = normalize_text_for_search(relative)
         if normalized.startswith('pasado'):
-            return 2, False
-        return (0 if normalized == 'hoy' else 1), False
+            return now + timedelta(days=2), False
+        return now + timedelta(days=0 if normalized == 'hoy' else 1), False
+
+    if day_match.group('offset'):
+        amount = _offset_amount(day_match.group('offset_amount'))
+        return _add_offset(now, amount, day_match.group('offset_unit')), False
 
     weekday = WEEKDAY_NUMBERS[normalize_text_for_search(day_match.group('weekday'))]
     days_ahead = (weekday - now.weekday()) % 7
     asks_for_next = bool(day_match.group('next_before') or day_match.group('next_after'))
     if days_ahead == 0 and asks_for_next:
-        return 7, False
+        return now + timedelta(days=7), False
 
-    return days_ahead, days_ahead == 0
+    return now + timedelta(days=days_ahead), days_ahead == 0
 
 def _hour_on_named_day(day_match, hour: int, minute: int, now: datetime, period: Optional[str]) -> datetime:
     """Put a written hour on the day named by a NAMED_DAY_PATTERN match."""
-    days_from_today, may_mean_next_week = _named_day_offset(day_match, now)
-    datetime_obj = _hour_on_day(now + timedelta(days=days_from_today), hour, minute, now, period)
+    day, may_mean_next_week = _named_day_date(day_match, now)
+    datetime_obj = _hour_on_day(day, hour, minute, now, period)
     if may_mean_next_week and datetime_obj <= now:
-        datetime_obj = _hour_on_day(now + timedelta(days=7), hour, minute, now, period)
+        datetime_obj = _hour_on_day(day + timedelta(days=7), hour, minute, now, period)
     return datetime_obj
 
 def _day_next_to_time(text: str, time_match):
@@ -1466,6 +1590,8 @@ def _date_with_time(text: str, date_match, datetime_obj: datetime, clean_text: s
     if parsed_time:
         hour, minute, period = parsed_time
         datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
+        if time_match.group('before'):
+            datetime_obj = _remind_before(datetime_obj, now)
         return datetime_obj, _remove_spans(clean_text, [time_match.span()])
 
     # No "a las": clock notation counts when written next to the date ("20/12 09:30")
@@ -1475,14 +1601,63 @@ def _date_with_time(text: str, date_match, datetime_obj: datetime, clean_text: s
         datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
         return datetime_obj, _remove_spans(text, [date_match.span(), clock_match.span()])
 
+    # No hour at all: a part of the day ("el 20 a la tarde")
+    moment = _find_moment_of_day(clean_text, on_another_day=True)
+    if moment:
+        moment_match, hour, period = moment
+        datetime_obj = _hour_on_day(datetime_obj, hour, 0, now, period)
+        return datetime_obj, _remove_spans(clean_text, [moment_match.span()])
+
     return datetime_obj, clean_text
+
+def _relative_offset_reminder(text: str, now: datetime) -> Optional[Tuple[datetime, str]]:
+    """Read "en 30 minutos", "en 3 días", "en 2 meses" as a moment counted from now.
+
+    Days and longer keep the current time of day unless a clock time next to the offset
+    ("en 3 días 18:00") or a part of the day ("en 3 días a la tarde") says otherwise.
+    They also give way to a day named earlier in the message: in "mañana avisar que en
+    2 semanas viajo" the reminder is for tomorrow and the offset is part of its text.
+    Returns (datetime, reminder_text) or None.
+    """
+    offset_match = re.search(RELATIVE_OFFSET_PATTERN, text, re.IGNORECASE)
+    if not offset_match:
+        return None
+
+    unit = offset_match.group('unit')
+    lands_on_another_day = _is_day_unit(unit)
+    if lands_on_another_day and re.search(NAMED_DAY_PATTERN, text[:offset_match.start()], re.IGNORECASE):
+        return None
+
+    amount = _offset_amount(offset_match.group('amount'))
+    if offset_match.group('half'):
+        amount += 0.5
+    datetime_obj = _add_offset(now, amount, unit)
+
+    spans_to_remove = [offset_match.span()]
+    if lands_on_another_day:
+        clock_match = _clock_time_next_to(text, offset_match)
+        moment = _find_moment_of_day(text, on_another_day=True)
+        if clock_match:
+            hour, minute, period = _parse_time_match(clock_match, clock_notation=True)
+            datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
+            spans_to_remove.append(clock_match.span())
+        elif moment:
+            moment_match, hour, period = moment
+            datetime_obj = _hour_on_day(datetime_obj, hour, 0, now, period)
+            spans_to_remove.append(moment_match.span())
+
+    return datetime_obj, _remove_spans(text, spans_to_remove)
+
+def _text_or_default(reminder_text: str) -> str:
+    """Name for a reminder written with a date and nothing else ("mañana 18:00")."""
+    return reminder_text or "recordatorio"
 
 def _smart_weekday_day_parse(weekday: str, day: int, now: datetime) -> datetime:
     """Parse weekday + day (e.g., 'lunes 29')."""
     if day < 1 or day > 31:
         return None
 
-    target_weekday = WEEKDAY_NUMBERS.get(weekday.lower())
+    target_weekday = WEEKDAY_NUMBERS.get(normalize_text_for_search(weekday))
     if target_weekday is None:
         return None
 
@@ -1693,8 +1868,7 @@ def extract_date_and_text(text: str, now: datetime = None):
     """Extract date/time and reminder text.
 
     now: the moment the message is read; defaults to the current time. Tests pass a fixed one.
-    It drives the smart date patterns, the "a las X" times and the "en X minutos" offsets.
-    The dateparser fallbacks and "antes de las" further down still read the real clock.
+    It drives everything except the dateparser fallbacks at the end, which read the real clock.
     """
 
     # Clean text
@@ -1732,10 +1906,8 @@ def extract_date_and_text(text: str, now: datetime = None):
     smart_patterns = [
         # "20/12/2026" or "20/12/26" (full date, taken as written)
         (FULL_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group('day_number')), int(m.group('month_number')), now, int(m.group('year')))),
-        # "el lunes 29" or "lunes 29" (weekday + day), but not "lunes 18:00" or "lunes 18hs"
-        (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(\d{1,2})\b(?![:.\/\-]\d|\s*(?:hs|hrs)\b)', lambda m: _smart_weekday_day_parse(m.group(1), int(m.group(2)), now)),
-        # "el lunes que viene" or "lunes que viene" - HIGHER PRIORITY
-        (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+que\s+viene\b', lambda m: _smart_next_weekday_parse(m.group(1), now)),
+        # "el lunes 29" or "lunes 29" (weekday + day of the month)
+        (WEEKDAY_AND_DAY_PATTERN, lambda m: _smart_weekday_day_parse(m.group('weekday'), int(m.group('day_number')), now)),
         # "el 20" (day of current month/year)
         (r'\bel\s+(\d{1,2})\b(?![\/\-:])', lambda m: _smart_day_parse(int(m.group(1)), now)),
         # "el 20/12" or "20/12" (day/month of current year)
@@ -1764,37 +1936,15 @@ def extract_date_and_text(text: str, now: datetime = None):
         else:
             datetime_obj = _smart_hour_parse(hour, minute, now, period)
 
+        if time_match.group('before'):
+            datetime_obj = _remind_before(datetime_obj, now)
+
         return datetime_obj, _remove_spans(text, spans_to_remove)
 
-    # Helper function to convert Spanish number words to digits
-    def spanish_word_to_number(word):
-        word_numbers = {
-            'una': 1, 'un': 1, 'uno': 1,
-            'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5,
-            'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9,
-            'diez': 10, 'media': 0.5
-        }
-        return word_numbers.get(word.lower())
-
-    # Relative time patterns
-    relative_patterns = [
-        # Spanish number words for relative time
-        (r'en\s+(una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media)\s*h(?:oras?)?',
-         lambda m: now + timedelta(hours=spanish_word_to_number(m.group(1)))),
-        (r'en\s+(una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|media)\s*m(?:in)?(?:utos?)?',
-         lambda m: now + timedelta(minutes=spanish_word_to_number(m.group(1)))),
-        # Numeric patterns
-        (r'en\s+(\d+)\s*m(?:in)?(?:utos?)?', lambda m: now + timedelta(minutes=int(m.group(1)))),
-        (r'en\s+(\d+)\s*h(?:oras?)?', lambda m: now + timedelta(hours=int(m.group(1)))),
-        (r'en\s+(\d+)\s*d(?:ias?)?', lambda m: now + timedelta(days=int(m.group(1))))
-    ]
-
-    for pattern, calc_func in relative_patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            datetime_obj = calc_func(match)
-            clean_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
-            return datetime_obj, clean_text
+    # "en 30 minutos", "en 3 días", "en 2 meses"
+    relative_offset = _relative_offset_reminder(text, now)
+    if relative_offset:
+        return relative_offset
 
     # Clock notation next to a named day: "mañana 18:00", "el viernes 18hs".
     # On its own ("18:00 comprar pan") it is left to the fallbacks below.
@@ -1803,14 +1953,34 @@ def extract_date_and_text(text: str, now: datetime = None):
         if clock_match:
             hour, minute, period = _parse_time_match(clock_match, clock_notation=True)
             datetime_obj = _hour_on_named_day(day_match, hour, minute, now, period)
-            return datetime_obj, _remove_spans(text, [clock_match.span(), day_match.span('day')])
+            clean_text = _remove_spans(text, [clock_match.span(), day_match.span('day')])
+            return datetime_obj, _text_or_default(clean_text)
 
-    # "pasado mañana" with no time: 9am like the other date-only reminders.
-    # The fallbacks below would read it as "mañana".
-    day_after_tomorrow = re.search(r'\bpasado\s+ma[ñn]ana\b', text, re.IGNORECASE)
-    if day_after_tomorrow:
-        datetime_obj = (now + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0)
-        return datetime_obj, _remove_spans(text, [day_after_tomorrow.span()])
+    # From here on there is no hour. A time with minutes somewhere else in the message
+    # ("mañana reunión 15:30") is left to the fallbacks below instead of being ignored.
+    if not _has_clock_with_minutes(text):
+        # A named day: "el sábado ir a la feria", "mañana a la tarde llamar al plomero"
+        day_match = re.search(NAMED_DAY_PATTERN, text, re.IGNORECASE)
+        if day_match:
+            spans_to_remove = [day_match.span('day')]
+            hour, period = DEFAULT_REMINDER_HOUR, CLOCK_PERIOD
+            names_today = normalize_text_for_search(day_match.group('relative') or '') == 'hoy'
+            moment = _find_moment_of_day(text, on_another_day=not names_today)
+            if moment:
+                moment_match, hour, period = moment
+                spans_to_remove.append(moment_match.span())
+            datetime_obj = _hour_on_named_day(day_match, hour, 0, now, period)
+            return datetime_obj, _text_or_default(_remove_spans(text, spans_to_remove))
+
+        # Only a part of the day: "esta noche sacar la basura", "a la tarde llamar"
+        moment = _find_moment_of_day(text)
+        if moment:
+            moment_match, hour, period = moment
+            if moment_match.group('today'):
+                datetime_obj = _hour_on_day(now, hour, 0, now, period)
+            else:
+                datetime_obj = _smart_hour_parse(hour, 0, now, period)
+            return datetime_obj, _text_or_default(_remove_spans(text, [moment_match.span()]))
 
     # Try with dateparser
     # First try simple date patterns without specific time
@@ -1822,12 +1992,11 @@ def extract_date_and_text(text: str, now: datetime = None):
 
     # Search for specific date/time patterns (excluding those handled by smart patterns)
     date_patterns = [
-        r'\b(?:mañana|tomorrow)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?|\d{1,2}\s*de\s*la\s*(?:mañana|tarde|noche)|antes\s*de\s*las?\s*\d{1,2})',
+        r'\b(?:mañana|tomorrow)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?|\d{1,2}\s*de\s*la\s*(?:mañana|tarde|noche))',
         r'\b(?:el\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)',
         r'\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)?',  # Full dates with year
         r'\b\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}\b',
         r'\b(?:hoy|today)\b.*?(?:\d{1,2}:\d{2}|\d{1,2}hs?)',
-        r'\bantes\s*de\s*las?\s*\d{1,2}(?::\d{2})?\b',
         r'\b\d{1,2}:\d{2}\b'
     ]
 
@@ -1840,23 +2009,6 @@ def extract_date_and_text(text: str, now: datetime = None):
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             date_text = match.group(0)
-            # Process "antes de las X"
-            if "antes de las" in date_text.lower():
-                # Extract the hour from "antes de las X"
-                hour_match = re.search(r'(\d{1,2})(?::\d{2})?', date_text)
-                if hour_match:
-                    hour = int(hour_match.group(1))
-                    # If it says "antes de las 5 de la tarde", convert to 17:00
-                    if "tarde" in text.lower() and hour <= 12:
-                        hour += 12
-                    # Create new date with specific time
-                    base_date = re.search(r'\b(?:mañana|tomorrow|hoy|today)\b', date_text, re.IGNORECASE)
-                    if base_date:
-                        if base_date.group(0).lower() in ['mañana', 'tomorrow']:
-                            date_base = (datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(days=1)).strftime('%Y-%m-%d')
-                        else:
-                            date_base = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).strftime('%Y-%m-%d')
-                        date_text = f"{date_base} {hour-1}:00"  # One hour before
             remaining_text = text.replace(match.group(0), '').strip()
             break
 
@@ -1874,6 +2026,8 @@ def extract_date_and_text(text: str, now: datetime = None):
         # Try parsing the entire text
         parsed_date = dateparser.parse(text, settings=DATEPARSER_SETTINGS)
         if parsed_date:
+            if parsed_date.tzinfo is None:
+                parsed_date = pytz.timezone('America/Argentina/Buenos_Aires').localize(parsed_date)
             # If it parses everything, assume no additional text
             return parsed_date, "recordatorio"
         return None, None
