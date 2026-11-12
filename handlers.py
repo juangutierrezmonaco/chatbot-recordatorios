@@ -170,6 +170,7 @@ Manejo tres funcionalidades principales:
 • `/recordar <fecha/hora> <texto>` - Crear recordatorio
 • `/lista` - Ver recordatorios activos
 • `/hoy` - Ver recordatorios de hoy
+• `/manana` - Ver recordatorios de mañana
 • `/semana [todos]` - Vista semanal completa
 • `/buscar <término>` - Buscar recordatorios
 • `/cancelar <id>` - Cancelar recordatorio
@@ -294,6 +295,23 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"   {reminder['text']}\n\n"
 
     await update.message.reply_text(message, parse_mode='Markdown')
+
+async def tomorrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /manana command: show tomorrow's pending reminders."""
+    import pytz
+    from datetime import datetime, timedelta
+    import scheduler
+
+    chat_id = update.effective_chat.id
+    tomorrow = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')) + timedelta(days=1)
+    reminders = db.get_all_active_reminders_for_date(tomorrow).get(chat_id, [])
+
+    if not reminders:
+        await update.message.reply_text("📅 No tenés recordatorios para mañana.")
+        return
+
+    message = scheduler.format_daily_summary(reminders, tomorrow, nightly=False)
+    await update.message.reply_text(message, parse_mode='HTML')
 
 async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /semana command."""
@@ -1883,6 +1901,7 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• `recordar` - Crear recordatorios\n"
             "• `lista` - Ver recordatorios activos\n"
             "• `hoy` - Recordatorios de hoy\n"
+            "• `manana` - Recordatorios de mañana\n"
             "• `semana` - Vista semanal completa\n"
             "• `dia` - Recordatorios de fecha específica\n"
             "• `buscar` - Buscar recordatorios\n"
@@ -1963,6 +1982,18 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '🔥 Destaca recordatorios importantes',
                 '📊 Muestra pendientes y enviados',
                 '🕐 Formato de hora claro (HH:MM)'
+            ]
+        },
+        'manana': {
+            'title': '📅 **Comando /manana**',
+            'description': 'Muestra los recordatorios pendientes para mañana',
+            'syntax': '`/manana`',
+            'examples': ['/manana'],
+            'features': [
+                '📋 Lista de recordatorios del día siguiente',
+                '⏰ Ordenados por hora cronológicamente',
+                '🔥 Destaca recordatorios importantes',
+                '🌙 Es el mismo resumen que llega automáticamente a las 22:00'
             ]
         },
         'semana': {
@@ -2301,7 +2332,8 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'borrar_bitacora': 'borrarBitacora',
         'historial_bitacora': 'historialBitacora',
         'subir_sorpresa': 'subirSorpresa',
-        'lista_bitacora': 'listaBitacora'
+        'lista_bitacora': 'listaBitacora',
+        'mañana': 'manana'
     }
 
     # Check if it's an alias

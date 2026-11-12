@@ -1279,3 +1279,44 @@ def get_all_date_reminders_including_past(chat_id: int, target_date: datetime) -
 
     conn.close()
     return reminders
+def get_all_active_reminders_for_date(target_date: datetime) -> Dict[int, List[Dict]]:
+    """Get active reminders for a specific date across all chats, grouped by chat_id."""
+    import pytz
+
+    timezone = pytz.timezone('America/Argentina/Buenos_Aires')
+    if target_date.tzinfo is None:
+        target_date = timezone.localize(target_date)
+    else:
+        target_date = target_date.astimezone(timezone)
+
+    day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, chat_id, text, datetime, is_important
+        FROM reminders
+        WHERE status = 'active'
+        AND datetime >= ? AND datetime <= ?
+        ORDER BY chat_id, datetime
+    ''', (day_start.isoformat(), day_end.isoformat()))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders_by_chat: Dict[int, List[Dict]] = {}
+    for row in rows:
+        dt = datetime.fromisoformat(row[3])
+        if dt.tzinfo is None:
+            dt = timezone.localize(dt)
+
+        reminders_by_chat.setdefault(row[1], []).append({
+            'id': row[0],
+            'text': row[2],
+            'datetime': dt,
+            'is_important': bool(row[4]) if row[4] is not None else False
+        })
+
+    return reminders_by_chat

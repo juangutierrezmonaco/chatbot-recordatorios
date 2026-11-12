@@ -49,6 +49,7 @@ def main():
         application.add_handler(CommandHandler("recordar", handlers.remind_command))
         application.add_handler(CommandHandler("lista", handlers.list_command))
         application.add_handler(CommandHandler("hoy", handlers.today_command))
+        application.add_handler(CommandHandler("manana", handlers.tomorrow_command))
         application.add_handler(CommandHandler("semana", handlers.week_command))
         application.add_handler(CommandHandler("dia", handlers.date_command))
         application.add_handler(CommandHandler("buscar", handlers.search_command))
@@ -95,6 +96,10 @@ def main():
         # Load pending reminders
         scheduler.load_pending_reminders(application.bot)
         logger.info("✅ Pending reminders loaded")
+
+        # Schedule nightly summary of tomorrow's reminders (22:00)
+        scheduler.schedule_daily_summary(application.bot)
+        logger.info("✅ Daily summary scheduled")
 
         logger.info("🚀 Bot started successfully")
         print("🤖 Bot de recordatorios iniciado")

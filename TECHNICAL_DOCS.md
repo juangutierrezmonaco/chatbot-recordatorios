@@ -223,6 +223,12 @@ def schedule_reminder(bot: Bot, chat_id: int, reminder_id: int, text: str, datet
 - **Gestión de expirados**: Jobs pasados se marcan como 'sent' automáticamente
 - **Tolerancia a fallos**: `misfire_grace_time=60` para recuperación
 
+### 🌙 Resumen Nocturno
+- **Job recurrente**: `schedule_daily_summary()` registra un `CronTrigger` diario a las 22:00 (America/Argentina/Buenos_Aires) con id `daily_summary`
+- **Envío**: `send_daily_summary()` consulta `db.get_all_active_reminders_for_date()` para el día siguiente, agrupa por `chat_id` y envía un mensaje por usuario (formato HTML, texto escapado)
+- **Alcance**: incluye recordatorios activos normales e importantes (marcados con 🔥); excluye enviados y cancelados. Los usuarios sin recordatorios para mañana no reciben mensaje
+- **Robustez**: un error enviando a un chat no corta el envío al resto; `misfire_grace_time=600` + `coalesce=True` por si el bot estaba ocupado o reiniciando a esa hora
+
 ## 🔥 Recordatorios Importantes
 
 Los recordatorios importantes son una funcionalidad especial que permite crear recordatorios que se repiten automáticamente cada X minutos hasta que el usuario los marca como completados.
