@@ -8,7 +8,7 @@ Run from the project root:
 import unittest
 from datetime import datetime
 
-from parsing_helpers import TZ, ParsingCases, at, parse
+from parsing_helpers import TZ, ParsingCases, at
 
 WITH_YEAR = '%d/%m/%Y %H:%M'
 WITH_SECONDS = '%d/%m %H:%M:%S'
@@ -75,13 +75,12 @@ class RelativeOffsets(ParsingCases):
         ], at(15), WITH_YEAR)
 
     def test_a_day_named_first_wins_over_a_day_offset_in_the_text(self):
-        # "que" is dropped by the request-word cleanup (issue #5)
         self.check([
-            ('mañana avisar que en 2 semanas viajo', ('12/11 09:00', 'avisar en 2 semanas viajo')),
-            ('el viernes avisar que en 3 meses vence el contrato', ('13/11 09:00', 'avisar en 3 meses vence el contrato')),
-            ('mañana a las 10 avisar que en 2 semanas viajo', ('12/11 10:00', 'avisar en 2 semanas viajo')),
+            ('mañana avisar que en 2 semanas viajo', ('12/11 09:00', 'avisar que en 2 semanas viajo')),
+            ('el viernes avisar que en 3 meses vence el contrato', ('13/11 09:00', 'avisar que en 3 meses vence el contrato')),
+            ('mañana a las 10 avisar que en 2 semanas viajo', ('12/11 10:00', 'avisar que en 2 semanas viajo')),
             # The offset comes first: it is the date
-            ('en 2 semanas avisar que mañana no voy', ('25/11 15:00', 'avisar mañana no voy')),
+            ('en 2 semanas avisar que mañana no voy', ('25/11 15:00', 'avisar que mañana no voy')),
             # Minutes and hours always count from now
             ('hoy llamar en 30 minutos a Juan', ('11/11 15:30', 'hoy llamar a Juan')),
         ], at(15))
@@ -128,21 +127,17 @@ class RelativeDayWithoutTime(ParsingCases):
             ('hoy comprar pan', ('11/11 09:00', 'comprar pan')),
         ], at(15))
 
-    def test_a_date_with_nothing_else_gets_a_default_name(self):
+    def test_a_time_away_from_the_day_stays_in_the_reminder(self):
+        # With no "a las" and not next to the day, the hour is what the reminder says, not
+        # when it is sent
         self.check([
-            ('mañana', ('12/11 09:00', 'recordatorio')),
-            ('mañana 18:00', ('12/11 18:00', 'recordatorio')),
-            ('el viernes', ('13/11 09:00', 'recordatorio')),
-            ('esta noche', ('11/11 21:00', 'recordatorio')),
+            ('mañana ir al médico 15:30', ('12/11 09:00', 'ir al médico 15:30')),
+            ('el lunes reunión con Juan 15:30', ('16/11 09:00', 'reunión con Juan 15:30')),
+            ('el jueves ir al médico en Rawson 22', ('12/11 09:00', 'ir al médico en Rawson 22')),
+            # Next to the day, or with "a las", it is the time of the reminder
+            ('mañana 15:30 ir al médico', ('12/11 15:30', 'ir al médico')),
+            ('mañana a las 15:30 ir al médico', ('12/11 15:30', 'ir al médico')),
         ], at(15))
-
-    def test_a_time_with_minutes_away_from_the_day_is_not_ignored(self):
-        # Not understood rather than silently moved to 09:00
-        now = at(15)
-        for text in ('el lunes reunión con Juan 15:30', 'el sábado partido 21:00'):
-            with self.subTest(text=text):
-                parsed, _ = parse(text, now)
-                self.assertNotIn('09:00', parsed or '')
 
 
 class MomentOfDay(ParsingCases):
@@ -196,8 +191,8 @@ class MomentOfDay(ParsingCases):
     def test_esta_noche_is_not_the_time_of_another_day(self):
         self.check([
             ('el 20 comprar velas esta noche', ('20/11 09:00', 'comprar velas esta noche')),
-            ('el viernes llevar lo de esta tarde', ('13/11 09:00', 'llevar lo esta tarde')),
-            ('en 3 días devolver lo de esta noche', ('14/11 15:00', 'devolver lo esta noche')),
+            ('el viernes llevar lo de esta tarde', ('13/11 09:00', 'llevar lo de esta tarde')),
+            ('en 3 días devolver lo de esta noche', ('14/11 15:00', 'devolver lo de esta noche')),
             ('hoy sacar la basura esta noche', ('11/11 21:00', 'sacar la basura')),
         ], at(15))
 

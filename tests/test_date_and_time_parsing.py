@@ -35,14 +35,13 @@ class WeekdayWithTime(ParsingCases):
     def test_todays_weekday_means_today_while_the_time_is_ahead(self):
         self.check([
             ('el miércoles a las 20 fútbol', ('11/11 20:00', 'fútbol')),
-            ('el miércoles a las 10 fútbol', ('11/11 22:00', 'fútbol')),
-            # 14:00 already passed today: next week's Wednesday
+            # A weekday name keeps the hour as written: 10:00 passed, so next week's Wednesday
+            ('el miércoles a las 10 fútbol', ('18/11 10:00', 'fútbol')),
             ('el miércoles a las 14 fútbol', ('18/11 14:00', 'fútbol')),
         ], at(15))
 
     def test_next_week_qualifiers(self):
         self.check([
-            # "que" is dropped by the request-word cleanup, so both spellings arrive the same
             ('el miércoles que viene a las 20 fútbol', ('18/11 20:00', 'fútbol')),
             ('el próximo miércoles a las 20 fútbol', ('18/11 20:00', 'fútbol')),
             ('el lunes que viene a las 9 reunión', ('16/11 09:00', 'reunión')),
@@ -51,7 +50,7 @@ class WeekdayWithTime(ParsingCases):
 
     def test_weekday_inside_the_reminder_stays_in_the_text(self):
         self.check([
-            ('a las 20 avisar que el viernes no voy', ('11/11 20:00', 'avisar el viernes no voy')),
+            ('a las 20 avisar que el viernes no voy', ('11/11 20:00', 'avisar que el viernes no voy')),
         ], at(15))
 
 
@@ -104,11 +103,10 @@ class FullDates(ParsingCases):
         ], at(15), WITH_YEAR)
 
     def test_street_names_are_not_dates(self):
-        # "de" is dropped by the request-word cleanup (issue #5)
         self.check([
-            ('mañana a las 10 ir a 9 de julio 1234', ('12/11/2026 10:00', 'ir a 9 julio 1234')),
-            ('el viernes a las 10 ir a 25 de mayo 300', ('13/11/2026 10:00', 'ir a 25 mayo 300')),
-            ('a las 18 pasar por 1 de mayo y corrientes', ('11/11/2026 18:00', 'pasar por 1 mayo y corrientes')),
+            ('mañana a las 10 ir a 9 de julio 1234', ('12/11/2026 10:00', 'ir a 9 de julio 1234')),
+            ('el viernes a las 10 ir a 25 de mayo 300', ('13/11/2026 10:00', 'ir a 25 de mayo 300')),
+            ('a las 18 pasar por 1 de mayo y corrientes', ('11/11/2026 18:00', 'pasar por 1 de mayo y corrientes')),
         ], at(15), WITH_YEAR)
 
     def test_only_20xx_is_read_as_a_year(self):
@@ -140,10 +138,9 @@ class DayAfterTomorrow(ParsingCases):
 
 class RelativeOffsetsComeFirst(ParsingCases):
     def test_en_x_wins_over_a_day_mentioned_in_the_text(self):
-        # "que" and "de" are dropped by the request-word cleanup (issue #5)
         self.check([
-            ('en 2 horas avisar que pasado mañana no voy', ('11/11 17:00', 'avisar pasado mañana no voy')),
-            ('en 30 minutos llamar para el turno de mañana 18:00', ('11/11 15:30', 'llamar para el turno mañana 18:00')),
+            ('en 2 horas avisar que pasado mañana no voy', ('11/11 17:00', 'avisar que pasado mañana no voy')),
+            ('en 30 minutos llamar para el turno de mañana 18:00', ('11/11 15:30', 'llamar para el turno de mañana 18:00')),
         ], at(15))
 
 
@@ -162,8 +159,8 @@ class NamedDayWithClockTime(ParsingCases):
 
     def test_numbers_away_from_the_day_are_not_a_time(self):
         self.check([
-            ('pasado mañana comprar 2 hs de estacionamiento', ('13/11 09:00', 'comprar 2 hs estacionamiento')),
-            ('20/12 comprar 2 hs de estacionamiento', ('20/12 09:00', 'comprar 2 hs estacionamiento')),
+            ('pasado mañana comprar 2 hs de estacionamiento', ('13/11 09:00', 'comprar 2 hs de estacionamiento')),
+            ('20/12 comprar 2 hs de estacionamiento', ('20/12 09:00', 'comprar 2 hs de estacionamiento')),
             ('el 25 de diciembre brindar 00:00', ('25/12 09:00', 'brindar 00:00')),
         ], at(15))
 

@@ -482,6 +482,17 @@ El bot entiende múltiples formatos de fecha y hora:
 - `20/12/2026 09:30`, `20/12 18hs`, `mañana 18:00`, `el viernes 18hs` → la hora en formato reloj va pegada a la fecha
 - `el viernes que viene a las 10`, `el próximo viernes a las 10`
 - El día cuenta si está junto a la hora o al comienzo del mensaje; en otro lugar queda como parte del texto
+- Si el día de la semana nombrado es hoy, vale hoy mientras la hora no haya pasado; si ya pasó, es el de la semana siguiente (`el jueves a las 10` dicho un jueves a la tarde es el jueves próximo a las 10:00)
+
+#### Hora del Aviso y Hora Dentro del Texto
+- La hora del aviso se indica con `a las` o pegada al día: `mañana a las 15:30 ir al médico`, `mañana 15:30 ir al médico`
+- Una hora suelta en otro lugar es parte del texto: `mañana ir al médico 15:30` avisa mañana a las 09:00 y guarda "Ir al médico 15:30"
+- Lo mismo con números que no son horas: `el jueves ir al médico en Rawson 22` avisa el jueves a las 09:00
+
+#### Texto del Recordatorio
+- El texto se guarda como fue escrito, sin la orden ni la fecha: `recordame que mañana tengo turno` guarda "Tengo turno"
+- La orden puede ir al comienzo o después de la fecha: `mañana a las 14 recordame que tengo turno médico`
+- Si el mensaje tiene fecha pero no texto, el bot lo pide en lugar de crear un recordatorio vacío
 
 ### Capitalización Automática
 
