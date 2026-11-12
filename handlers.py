@@ -1169,12 +1169,7 @@ def _smart_day_parse_with_past(day: int, now: datetime) -> datetime:
 
 def _smart_weekday_day_parse_with_past(weekday_str: str, day: int, now: datetime) -> datetime:
     """Parse weekday + day combination, allowing past dates."""
-    weekdays = {
-        'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3,
-        'viernes': 4, 'sabado': 5, 'domingo': 6
-    }
-
-    target_weekday = weekdays.get(weekday_str.lower())
+    target_weekday = WEEKDAY_NUMBERS.get(weekday_str.lower())
     if target_weekday is None or day < 1 or day > 31:
         return None
 
@@ -1233,11 +1228,25 @@ MONTH_NUMBERS = {
     'noviembre': 11, 'diciembre': 12
 }
 
-# "25 de diciembre", "el 25 diciembre del 2026" (the "de" is stripped before parsing)
+_WEEKDAY_NAMES = r'lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo'
+
+# Weekday said together with a full date ("viernes 25 de diciembre"): the date already
+# tells the day, so the weekday is only removed from the reminder text.
+_WEEKDAY_BEFORE_DATE = r'(?P<weekday_prefix>(?:el\s+)?(?:' + _WEEKDAY_NAMES + r'),?\s+)?'
+
+# "25 de diciembre", "el 25 diciembre del 2026", "viernes 25 de diciembre"
+# (the "de" is stripped before parsing)
 MONTH_NAME_DATE_PATTERN = (
-    r'\b(?:el\s+)?(\d{1,2})\s+(?:de\s+)?'
-    r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|sep?tiembre|octubre|noviembre|diciembre)\b'
-    r'(?:\s+(?:del?\s+)?(\d{4})\b)?'
+    r'\b' + _WEEKDAY_BEFORE_DATE +
+    r'(?P<article>el\s+)?(?P<day_number>\d{1,2})\s+(?:de\s+)?'
+    r'(?P<month>enero|febrero|marzo|abril|mayo|junio|julio|agosto|sep?tiembre|octubre|noviembre|diciembre)\b'
+    r'(?:\s+(?:del?\s+)?(?P<year>20\d{2})\b)?'
+)
+
+# "20/12/2026", "20/12/26", "viernes 20/12/2026"
+FULL_DATE_PATTERN = (
+    r'\b' + _WEEKDAY_BEFORE_DATE +
+    r'(?:el\s+)?(?P<day_number>\d{1,2})[\/\-](?P<month_number>\d{1,2})[\/\-](?P<year>\d{4}|\d{2})\b'
 )
 
 # Day named next to a time: "hoy", "mañana", "pasado mañana", "el viernes", "el viernes que viene".
@@ -1247,7 +1256,7 @@ NAMED_DAY_PATTERN = (
     r'(?P<day>\b(?:'
     r'(?P<relative>pasado\s+ma[ñn]ana|(?<!\bla\s)(?<!\besta\s)ma[ñn]ana|hoy)'
     r'|(?:(?:el|este)\s+)?(?P<next_before>pr[oó]ximo\s+)?'
-    r'(?P<weekday>lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)'
+    r'(?P<weekday>' + _WEEKDAY_NAMES + r')'
     r'(?P<next_after>\s+(?:que\s+)?viene|\s+pr[oó]ximo)?'
     r')\b)'
 )
@@ -1420,18 +1429,54 @@ def _remove_spans(text: str, spans: List[Tuple[int, int]]) -> str:
         text = text[:start] + ' ' + text[end:]
     return re.sub(r'\s+', ' ', text).strip()
 
+def _find_month_name_date(text: str):
+    """Find a "25 de diciembre" that is written as a date.
+
+    Street names look the same ("9 de Julio 1234", "25 de Mayo y Corrientes"), so it counts
+    only opening the message, after "el" or a weekday, or next to a time.
+    Returns the MONTH_NAME_DATE_PATTERN match or None.
+    """
+    for date_match in re.finditer(MONTH_NAME_DATE_PATTERN, text, re.IGNORECASE):
+        reads_as_date = (
+            date_match.start() == 0
+            or date_match.group('article')
+            or date_match.group('weekday_prefix')
+            or re.compile(r'\s*' + TIME_EXPRESSION_PATTERN, re.IGNORECASE).match(text, date_match.end())
+            or re.search(TIME_EXPRESSION_PATTERN + r'\s*$', text[:date_match.start()], re.IGNORECASE)
+            or _clock_time_next_to(text, date_match)
+        )
+        if reads_as_date:
+            return date_match
+
+    return None
+
+def _date_with_time(text: str, date_match, datetime_obj: datetime, clean_text: str, now: datetime) -> Tuple[datetime, str]:
+    """Add the time written with an explicit date.
+
+    clean_text is the message without the date. Returns (datetime, reminder_text).
+    """
+    time_match = re.search(TIME_EXPRESSION_PATTERN, clean_text, re.IGNORECASE)
+    parsed_time = _parse_time_match(time_match) if time_match else None
+    if parsed_time:
+        hour, minute, period = parsed_time
+        datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
+        return datetime_obj, _remove_spans(clean_text, [time_match.span()])
+
+    # No "a las": clock notation counts when written next to the date ("20/12 09:30")
+    clock_match = _clock_time_next_to(text, date_match)
+    if clock_match:
+        hour, minute, period = _parse_time_match(clock_match, clock_notation=True)
+        datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
+        return datetime_obj, _remove_spans(text, [date_match.span(), clock_match.span()])
+
+    return datetime_obj, clean_text
+
 def _smart_weekday_day_parse(weekday: str, day: int, now: datetime) -> datetime:
     """Parse weekday + day (e.g., 'lunes 29')."""
     if day < 1 or day > 31:
         return None
 
-    # Map Spanish weekdays to numbers (Monday=0)
-    weekdays = {
-        'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3,
-        'viernes': 4, 'sabado': 5, 'domingo': 6
-    }
-
-    target_weekday = weekdays.get(weekday.lower())
+    target_weekday = WEEKDAY_NUMBERS.get(weekday.lower())
     if target_weekday is None:
         return None
 
@@ -1466,13 +1511,7 @@ def _smart_weekday_day_parse(weekday: str, day: int, now: datetime) -> datetime:
 
 def _smart_next_weekday_parse(weekday: str, now: datetime) -> datetime:
     """Parse 'weekday que viene' (e.g., 'lunes que viene')."""
-    # Map Spanish weekdays to numbers (Monday=0)
-    weekdays = {
-        'lunes': 0, 'martes': 1, 'miercoles': 2, 'jueves': 3,
-        'viernes': 4, 'sabado': 5, 'domingo': 6
-    }
-
-    target_weekday = weekdays.get(weekday.lower())
+    target_weekday = WEEKDAY_NUMBERS.get(weekday.lower())
     if target_weekday is None:
         return None
 
@@ -1673,12 +1712,20 @@ def extract_date_and_text(text: str, now: datetime = None):
     if now is None:
         now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
 
+    # "25 de diciembre" or "el 25 de diciembre de 2026", where it reads as a date and not a street
+    month_date = _find_month_name_date(text)
+    if month_date:
+        month = MONTH_NUMBERS[normalize_text_for_search(month_date.group('month'))]
+        year = int(month_date.group('year')) if month_date.group('year') else None
+        datetime_obj = _smart_date_parse(int(month_date.group('day_number')), month, now, year)
+        if datetime_obj:
+            clean_text = _remove_spans(text, [month_date.span()])
+            return _date_with_time(text, month_date, datetime_obj, clean_text, now)
+
     # Smart patterns for intuitive date parsing
     smart_patterns = [
         # "20/12/2026" or "20/12/26" (full date, taken as written)
-        (r'\b(?:el\s+)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4}|\d{2})\b', lambda m: _smart_date_parse(int(m.group(1)), int(m.group(2)), now, int(m.group(3)))),
-        # "25 de diciembre" or "el 25 de diciembre de 2026" (day + month name)
-        (MONTH_NAME_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group(1)), MONTH_NUMBERS[normalize_text_for_search(m.group(2))], now, int(m.group(3)) if m.group(3) else None)),
+        (FULL_DATE_PATTERN, lambda m: _smart_date_parse(int(m.group('day_number')), int(m.group('month_number')), now, int(m.group('year')))),
         # "el lunes 29" or "lunes 29" (weekday + day), but not "lunes 18:00" or "lunes 18hs"
         (r'\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(\d{1,2})\b(?![:.\/\-]\d|\s*(?:hs|hrs)\b)', lambda m: _smart_weekday_day_parse(m.group(1), int(m.group(2)), now)),
         # "el lunes que viene" or "lunes que viene" - HIGHER PRIORITY
@@ -1695,23 +1742,7 @@ def extract_date_and_text(text: str, now: datetime = None):
             datetime_obj = calc_func(match)
             if datetime_obj:
                 clean_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
-
-                # After finding a date, check if there's time info in remaining text
-                time_match = re.search(TIME_EXPRESSION_PATTERN, clean_text, re.IGNORECASE)
-                parsed_time = _parse_time_match(time_match) if time_match else None
-                if parsed_time:
-                    hour, minute, period = parsed_time
-                    datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
-                    return datetime_obj, _remove_spans(clean_text, [time_match.span()])
-
-                # No "a las": clock notation counts when written next to the date ("20/12 09:30")
-                clock_match = _clock_time_next_to(text, match)
-                if clock_match:
-                    hour, minute, period = _parse_time_match(clock_match, clock_notation=True)
-                    datetime_obj = _hour_on_day(datetime_obj, hour, minute, now, period)
-                    return datetime_obj, _remove_spans(text, [match.span(), clock_match.span()])
-
-                return datetime_obj, clean_text
+                return _date_with_time(text, match, datetime_obj, clean_text, now)
 
     # A time with no date pattern: "a las 9", alone or next to a named day (mañana, el viernes)
     time_match = re.search(TIME_EXPRESSION_PATTERN, text, re.IGNORECASE)
@@ -1728,22 +1759,6 @@ def extract_date_and_text(text: str, now: datetime = None):
             datetime_obj = _smart_hour_parse(hour, minute, now, period)
 
         return datetime_obj, _remove_spans(text, spans_to_remove)
-
-    # Clock notation next to a named day: "mañana 18:00", "el viernes 18hs".
-    # On its own ("18:00 comprar pan") it is left to the fallbacks below.
-    for day_match in re.finditer(NAMED_DAY_PATTERN, text, re.IGNORECASE):
-        clock_match = _clock_time_next_to(text, day_match)
-        if clock_match:
-            hour, minute, period = _parse_time_match(clock_match, clock_notation=True)
-            datetime_obj = _hour_on_named_day(day_match, hour, minute, now, period)
-            return datetime_obj, _remove_spans(text, [clock_match.span(), day_match.span('day')])
-
-    # "pasado mañana" with no time: 9am like the other date-only reminders.
-    # The fallbacks below would read it as "mañana".
-    day_after_tomorrow = re.search(r'\bpasado\s+ma[ñn]ana\b', text, re.IGNORECASE)
-    if day_after_tomorrow:
-        datetime_obj = (now + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0)
-        return datetime_obj, _remove_spans(text, [day_after_tomorrow.span()])
 
     # Helper function to convert Spanish number words to digits
     def spanish_word_to_number(word):
@@ -1774,6 +1789,22 @@ def extract_date_and_text(text: str, now: datetime = None):
             datetime_obj = calc_func(match)
             clean_text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
             return datetime_obj, clean_text
+
+    # Clock notation next to a named day: "mañana 18:00", "el viernes 18hs".
+    # On its own ("18:00 comprar pan") it is left to the fallbacks below.
+    for day_match in re.finditer(NAMED_DAY_PATTERN, text, re.IGNORECASE):
+        clock_match = _clock_time_next_to(text, day_match)
+        if clock_match:
+            hour, minute, period = _parse_time_match(clock_match, clock_notation=True)
+            datetime_obj = _hour_on_named_day(day_match, hour, minute, now, period)
+            return datetime_obj, _remove_spans(text, [clock_match.span(), day_match.span('day')])
+
+    # "pasado mañana" with no time: 9am like the other date-only reminders.
+    # The fallbacks below would read it as "mañana".
+    day_after_tomorrow = re.search(r'\bpasado\s+ma[ñn]ana\b', text, re.IGNORECASE)
+    if day_after_tomorrow:
+        datetime_obj = (now + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0)
+        return datetime_obj, _remove_spans(text, [day_after_tomorrow.span()])
 
     # Try with dateparser
     # First try simple date patterns without specific time

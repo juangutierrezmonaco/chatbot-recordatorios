@@ -466,7 +466,7 @@ El bot entiende múltiples formatos de fecha y hora:
 #### Fechas Específicas
 - `25/09/2025`, `25/09/25` → fecha completa, tal cual está escrita
 - `25/09` → este año, o el próximo si ya pasó
-- `25 de diciembre`, `el 25 de diciembre de 2027`
+- `25 de diciembre`, `el 25 de diciembre de 2027`, `viernes 25 de diciembre` → cuenta como fecha al comienzo del mensaje, después de `el` o junto a la hora; así `ir a 9 de Julio 1234` sigue siendo texto
 - `el 15` (día 15 del mes actual)
 - `lunes 29` (lunes más cercano que caiga día 29)
 

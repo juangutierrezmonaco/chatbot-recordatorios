@@ -96,9 +96,32 @@ class FullDates(ParsingCases):
             ('el 21 de setiembre a las 11 picnic', ('21/09/2027 11:00', 'picnic')),
         ], at(15), WITH_YEAR)
 
-    def test_month_name_wins_over_the_weekday(self):
+    def test_month_name_away_from_the_start_needs_el_or_a_time(self):
         self.check([
-            ('viernes 25 de diciembre a las 10 abrir regalos', ('25/12/2026 10:00', 'viernes abrir regalos')),
+            ('abrir regalos el 25 de diciembre', ('25/12/2026 09:00', 'abrir regalos')),
+            ('abrir regalos 25 de diciembre a las 10', ('25/12/2026 10:00', 'abrir regalos')),
+            ('abrir regalos 25 de diciembre 20:30', ('25/12/2026 20:30', 'abrir regalos')),
+        ], at(15), WITH_YEAR)
+
+    def test_street_names_are_not_dates(self):
+        # "de" is dropped by the request-word cleanup (issue #5)
+        self.check([
+            ('mañana a las 10 ir a 9 de julio 1234', ('12/11/2026 10:00', 'ir a 9 julio 1234')),
+            ('el viernes a las 10 ir a 25 de mayo 300', ('13/11/2026 10:00', 'ir a 25 mayo 300')),
+            ('a las 18 pasar por 1 de mayo y corrientes', ('11/11/2026 18:00', 'pasar por 1 mayo y corrientes')),
+        ], at(15), WITH_YEAR)
+
+    def test_only_20xx_is_read_as_a_year(self):
+        self.check([
+            ('25 de diciembre 1234 brindar', ('25/12/2026 09:00', '1234 brindar')),
+        ], at(15), WITH_YEAR)
+
+    def test_weekday_said_with_a_full_date_is_dropped(self):
+        # The date already tells the day, so the weekday must not stay in the reminder text
+        self.check([
+            ('viernes 25 de diciembre a las 10 abrir regalos', ('25/12/2026 10:00', 'abrir regalos')),
+            ('abrir regalos el viernes 25 de diciembre', ('25/12/2026 09:00', 'abrir regalos')),
+            ('el domingo 20/12/2026 09:30 viaje', ('20/12/2026 09:30', 'viaje')),
         ], at(15), WITH_YEAR)
 
 
@@ -110,6 +133,15 @@ class DayAfterTomorrow(ParsingCases):
             ('pasado mañana 18hs llamar a mamá', ('13/11 18:00', 'llamar a mamá')),
             ('pasado mañana a las 10 llamar a mamá', ('13/11 10:00', 'llamar a mamá')),
             ('llamar a mamá pasado mañana', ('13/11 09:00', 'llamar a mamá')),
+        ], at(15))
+
+
+class RelativeOffsetsComeFirst(ParsingCases):
+    def test_en_x_wins_over_a_day_mentioned_in_the_text(self):
+        # "que" and "de" are dropped by the request-word cleanup (issue #5)
+        self.check([
+            ('en 2 horas avisar que pasado mañana no voy', ('11/11 17:00', 'avisar pasado mañana no voy')),
+            ('en 30 minutos llamar para el turno de mañana 18:00', ('11/11 15:30', 'llamar para el turno mañana 18:00')),
         ], at(15))
 
 
