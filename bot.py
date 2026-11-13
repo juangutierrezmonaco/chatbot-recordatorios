@@ -10,6 +10,7 @@ from telegram.error import InvalidToken
 import db
 import scheduler
 import handlers
+import announcements
 
 # Configure logging
 logging.basicConfig(
@@ -41,8 +42,14 @@ def main():
         scheduler.init_scheduler()
         logger.info("✅ Scheduler initialized")
 
-        # Create application
-        application = Application.builder().token(token).build()
+        # Create application. On startup it tells users what changed since the last
+        # announced release (release_notes.json)
+        application = (
+            Application.builder()
+            .token(token)
+            .post_init(announcements.announce_on_startup)
+            .build()
+        )
 
         # Register command handlers
         application.add_handler(CommandHandler("start", handlers.start_command))

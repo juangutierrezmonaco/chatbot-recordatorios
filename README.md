@@ -24,9 +24,11 @@ Ver guía completa en: [`deploy-fly.md`](deploy-fly.md)
 
 **🔄 Workflow después del deploy inicial:**
 ```bash
-# Hacer cambios → Probar local → Commitear → Deploy
+# Hacer cambios → Probar local → Commitear → Contar novedades → Deploy
 git add -A && git commit -m "cambios" && fly deploy
 ```
+
+**📣 Novedades:** antes de cada deploy agregá una entrada en `release_notes.json`. Al arrancar, el bot se la manda a quienes lo usan. Detalle en [`deploy-fly.md`](deploy-fly.md).
 
 ---
 
