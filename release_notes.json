@@ -1,0 +1,14 @@
+{
+  "releases": [
+    {
+      "version": "2026-11-13",
+      "notes": [
+        "Entiendo mejor fechas y horas: `a las 12` ya no da error, y ahora entiendo `el viernes a las 10`, `mañana a las 9 de la noche`, `25 de diciembre`, `en 2 semanas`, `esta noche` y `antes de las 5`.",
+        "Los recordatorios se guardan con el texto tal cual lo escribiste, sin palabras de menos.",
+        "La hora del aviso va con `a las` o pegada al día. Una hora suelta en el texto es parte del recordatorio: `mañana ir al médico 15:30` te avisa a las 9 y guarda la hora.",
+        "Si mandás solo una fecha, te pido el texto en vez de crear un recordatorio vacío.",
+        "Desde ahora, cada vez que haya novedades te las cuento por acá."
+      ]
+    }
+  ]
+}

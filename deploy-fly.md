@@ -148,10 +148,25 @@ fly scale memory 512
    git push origin master
    ```
 
-4. **Deploy a Fly.io**
+4. **Contar las novedades** en `release_notes.json`
+   ```json
+   {
+     "releases": [
+       {"version": "2026-11-20", "notes": ["Nueva función para usuarios", "Otra mejora"]},
+       {"version": "2026-11-13", "notes": ["..."]}
+     ]
+   }
+   ```
+   - Agregá una entrada **arriba de todo** con una versión nueva (la fecha; si hay dos deploys el mismo día, `2026-11-20.2`).
+   - Notas cortas y pensadas para quien usa el bot, no para quien lo programa. Los comandos y ejemplos van entre backticks: se muestran como código.
+   - Si el deploy no trae nada que contar, no agregues entrada: sin versión nueva no se manda nada.
+   - `python3 -m unittest discover -s tests` valida el archivo antes de deployar.
+
+5. **Deploy a Fly.io**
    ```bash
    fly deploy
    ```
+   Al arrancar, el bot manda las notas que todavía no anunció a quienes lo usan (al menos un recordatorio o una nota en la bitácora). Un reinicio sin versión nueva no vuelve a mandarlas.
 
 ### **¿Se actualiza automáticamente?**
 

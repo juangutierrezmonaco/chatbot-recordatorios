@@ -1320,3 +1320,44 @@ def get_all_active_reminders_for_date(target_date: datetime) -> Dict[int, List[D
         })
 
     return reminders_by_chat
+
+# Bot-wide state
+def get_app_state(key: str) -> Optional[str]:
+    """Value stored under `key` in app_state, or None if it was never set."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute('SELECT value FROM app_state WHERE key = ?', (key,)).fetchone()
+    finally:
+        conn.close()
+
+    return row[0] if row else None
+
+def set_app_state(key: str, value: str):
+    """Store `value` under `key` in app_state, replacing any previous value."""
+    import pytz
+
+    updated_at = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires')).isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute('''
+            INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        ''', (key, value, updated_at))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_engaged_chat_ids() -> List[int]:
+    """Chats that use the bot: at least one reminder or bitácora entry, in any status."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute('''
+            SELECT chat_id FROM reminders
+            UNION
+            SELECT chat_id FROM vault
+            ORDER BY chat_id
+        ''').fetchall()
+    finally:
+        conn.close()
+
+    return [row[0] for row in rows]
