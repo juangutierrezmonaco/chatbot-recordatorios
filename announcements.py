@@ -39,7 +39,27 @@ def load_releases(path: str = RELEASE_NOTES_PATH) -> List[Dict]:
         logger.error(f"Could not read release notes from {path}: {error}")
         return []
 
-    return [release for release in releases if release.get('version') and release.get('notes')]
+    valid_releases = []
+    for release in releases:
+        if _is_valid_release(release):
+            valid_releases.append(release)
+        else:
+            logger.error(f"Skipping malformed release in {path}: {release!r}")
+
+    return valid_releases
+
+
+def _is_valid_release(release) -> bool:
+    """A release needs a version and a non-empty list of non-empty text notes."""
+    if not isinstance(release, dict) or not isinstance(release.get('version'), str) or not release['version']:
+        return False
+
+    notes = release.get('notes')
+    return (
+        isinstance(notes, list)
+        and bool(notes)
+        and all(isinstance(note, str) and note.strip() for note in notes)
+    )
 
 
 def pending_releases(releases: List[Dict], last_announced: Optional[str]) -> List[Dict]:
@@ -87,6 +107,8 @@ async def announce_new_releases(bot: Bot, releases: Optional[List[Dict]] = None)
 
     Returns the number of chats that received them. A chat that cannot be reached (it
     blocked the bot, for example) is skipped; the release still counts as announced.
+    If no chat could be reached (Telegram down at startup), nothing is recorded and the
+    next start tries again.
     """
     if releases is None:
         releases = load_releases()
@@ -109,6 +131,10 @@ async def announce_new_releases(bot: Bot, releases: Optional[List[Dict]] = None)
         await asyncio.sleep(SECONDS_BETWEEN_CHATS)
 
     newest = to_announce[-1]['version']
+    if chat_ids and not delivered:
+        logger.error(f"Release {newest} could not be sent to any chat; it will be retried on the next start")
+        return 0
+
     db.set_app_state(LAST_ANNOUNCED_KEY, newest)
     logger.info(f"Release {newest} announced to {delivered}/{len(chat_ids)} chats")
     return delivered

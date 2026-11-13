@@ -131,10 +131,51 @@ class AnnounceNewReleases(unittest.TestCase):
         self.assertEqual([chat_id for chat_id, _, _ in bot.sent], [2])
         self.assertEqual(db.get_app_state(announcements.LAST_ANNOUNCED_KEY), '2026-11-20')
 
+    def test_telegram_down_at_startup_retries_on_the_next_start(self):
+        bot = FakeBot(unreachable={1, 2})
+        self.assertEqual(self.announce(bot), 0)
+        self.assertIsNone(db.get_app_state(announcements.LAST_ANNOUNCED_KEY))
+
+        bot = FakeBot()
+        self.assertEqual(self.announce(bot), 2)
+        self.assertEqual(db.get_app_state(announcements.LAST_ANNOUNCED_KEY), '2026-11-20')
+
+    def test_no_chats_records_the_release_so_new_users_do_not_get_old_notes(self):
+        tmp = os.path.join(self.tmp_dir.name, 'empty.db')
+        db.DB_PATH = tmp
+        MigrationManager(tmp, migrations_dir=os.path.join(ROOT, 'migrations')).run_migrations()
+        self.assertEqual(self.announce(FakeBot()), 0)
+        self.assertEqual(db.get_app_state(announcements.LAST_ANNOUNCED_KEY), '2026-11-20')
+
     def test_no_releases_sends_nothing_and_records_nothing(self):
         bot = FakeBot()
         self.assertEqual(self.announce(bot, []), 0)
         self.assertIsNone(db.get_app_state(announcements.LAST_ANNOUNCED_KEY))
+
+
+class LoadReleases(unittest.TestCase):
+    def load(self, content):
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as notes_file:
+            notes_file.write(content)
+        try:
+            return announcements.load_releases(notes_file.name)
+        finally:
+            os.unlink(notes_file.name)
+
+    def test_malformed_releases_are_skipped(self):
+        releases = self.load('''{"releases": [
+            {"version": "v4", "notes": ["Bien"]},
+            {"version": "v3", "notes": "Texto en vez de lista"},
+            {"version": "v2", "notes": []},
+            {"version": "", "notes": ["Sin versión"]},
+            {"version": "v1", "notes": ["Bien", "  "]},
+            "no es un objeto"
+        ]}''')
+        self.assertEqual([r['version'] for r in releases], ['v4'])
+
+    def test_unreadable_file_means_no_releases(self):
+        self.assertEqual(self.load('{ esto no es json'), [])
+        self.assertEqual(self.load('{"otra_cosa": []}'), [])
 
 
 class ReleaseNotesFile(unittest.TestCase):
