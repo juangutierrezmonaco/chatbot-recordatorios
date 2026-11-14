@@ -272,8 +272,36 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await reply_html(update.message, message)
 
+# Emoji and label of each status in the lists of reminders
+REMINDER_STATUS_LABELS = {
+    'active': ('🔔', ''),
+    'sent': ('✅', 'enviado'),
+    'completed': ('🏁', 'completado'),
+    'cancelled': ('❌', 'cancelado'),
+    'failed': ('⚠️', 'no se pudo enviar'),
+}
+
+def _reminder_entry(reminder: dict, when_format: str, text_html: Optional[str] = None, indent: str = '') -> str:
+    """A reminder in a list: status, 🔥 if important, id, time and status label; then its text.
+
+    text_html replaces the escaped text (search results with the term highlighted).
+    """
+    status = reminder.get('status', 'active')
+    emoji, label = REMINDER_STATUS_LABELS.get(status, ('🔔', status))
+    if reminder.get('is_important'):
+        emoji = '🔥' if status == 'active' else f'{emoji} 🔥'
+
+    moment = reminder['datetime']
+    # Dates without a timezone (older reminders) are already Buenos Aires time
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(pytz.timezone('America/Argentina/Buenos_Aires'))
+    when = moment.strftime(when_format)
+    label_html = f" <i>({label})</i>" if label else ''
+    text = escape(reminder['text']) if text_html is None else text_html
+    return f"{indent}{emoji} <b>#{reminder['id']}</b> - {when}{label_html}\n{indent}   {text}\n"
+
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /hoy command."""
+    """Handle the /hoy command: every reminder of today with its status."""
     chat_id = update.effective_chat.id
     reminders = db.get_today_reminders(chat_id)
 
@@ -281,24 +309,8 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📅 No tienes recordatorios para hoy.")
         return
 
-    message = "📅 <b>Tus recordatorios para hoy:</b>\n\n"
-
-    for reminder in reminders:
-        # Show only time for today's reminders (not date)
-        formatted_time = reminder['datetime'].strftime("%H:%M")
-
-        # Show different emoji and text based on status
-        if reminder['status'] == 'sent':
-            status_emoji = "✅"
-            status_text = "(enviado)"
-        else:
-            status_emoji = "🔔"
-            status_text = ""
-
-        message += f"{status_emoji} <b>#{reminder['id']}</b> - {formatted_time} {status_text}\n"
-        message += f"   {escape(reminder['text'])}\n\n"
-
-    await reply_html(update.message, message)
+    entries = "\n".join(_reminder_entry(reminder, "%H:%M") for reminder in reminders)
+    await reply_html(update.message, f"📅 <b>Tus recordatorios para hoy:</b>\n\n{entries}")
 
 async def tomorrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /manana command: show tomorrow's pending reminders."""
@@ -318,13 +330,18 @@ async def tomorrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message, parse_mode='HTML')
 
 async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /semana command."""
+    """Handle the /semana command: pending reminders of the week, or all of them with 'todos'."""
     chat_id = update.effective_chat.id
 
-    # Check if "todos" argument is provided
-    include_sent = False
-    if context.args and context.args[0].lower() == "todos":
-        include_sent = True
+    argument = context.args[0].lower() if context.args else 'pendientes'
+    if argument not in ('pendientes', 'todos'):
+        await update.message.reply_text(
+            "❌ Uso:\n"
+            "• /semana - Pendientes de esta semana\n"
+            "• /semana todos - También los enviados y completados"
+        )
+        return
+    include_sent = argument == 'todos'
 
     reminders = db.get_week_reminders(chat_id, include_sent)
 
@@ -335,74 +352,37 @@ async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("📅 No tienes recordatorios pendientes para esta semana.")
         return
 
-    # Group reminders by day
     from collections import defaultdict
-    from datetime import datetime, timedelta
-    import pytz
+    from datetime import timedelta
 
     timezone = pytz.timezone('America/Argentina/Buenos_Aires')
     now = datetime.now(timezone)
 
-    # Create a dict to group reminders by day
     days_reminders = defaultdict(list)
-
     for reminder in reminders:
-        # Get the date (without time) as key
-        reminder_date = reminder['datetime'].date()
-        days_reminders[reminder_date].append(reminder)
+        days_reminders[reminder['datetime'].astimezone(timezone).date()].append(reminder)
 
-    # Spanish day names
-    day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-
-    # Set message header based on what we're showing
     if include_sent:
         message = "📅 <b>Tus recordatorios de esta semana (todos):</b>\n\n"
     else:
         message = "📅 <b>Tus recordatorios pendientes de esta semana:</b>\n\n"
 
-    # Get start of week (Monday)
-    days_since_monday = now.weekday()
-    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_monday)
-
-    # Iterate through each day of the week
+    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
     for i in range(7):
         current_day = week_start + timedelta(days=i)
         current_date = current_day.date()
-        day_name = day_names[i]
+        day_name = scheduler.WEEKDAYS_ES[i].capitalize()
+        today_mark = " (HOY)" if current_date == now.date() else ""
+        day_header = f"<b>{day_name} {current_day.strftime('%d/%m')}{today_mark}</b>"
 
-        # Format date
-        formatted_date = current_day.strftime("%d/%m")
-
-        # Check if it's today
-        if current_date == now.date():
-            day_header = f"<b>{day_name} {formatted_date} (HOY)</b>"
-        else:
-            day_header = f"<b>{day_name} {formatted_date}</b>"
-
-        # Get reminders for this day
         day_reminders = days_reminders.get(current_date, [])
-
         if day_reminders:
             message += f"{day_header}\n"
-            for reminder in day_reminders:
-                formatted_time = reminder['datetime'].strftime("%H:%M")
-
-                # Show different emoji and text based on status
-                if reminder['status'] == 'sent':
-                    status_emoji = "✅"
-                    status_text = "(enviado)"
-                else:
-                    status_emoji = "🔔"
-                    status_text = ""
-
-                message += f"  {status_emoji} <b>#{reminder['id']}</b> - {formatted_time} {status_text}\n"
-                message += f"     {escape(reminder['text'])}\n"
+            message += "".join(_reminder_entry(reminder, "%H:%M", indent="  ") for reminder in day_reminders)
             message += "\n"
-        else:
-            # Only show empty days if they haven't passed yet or are today
-            if current_date >= now.date():
-                message += f"{day_header}\n"
-                message += f"  <i>Sin recordatorios</i>\n\n"
+        elif current_date >= now.date():
+            # Past days without reminders are left out
+            message += f"{day_header}\n  <i>Sin recordatorios</i>\n\n"
 
     await reply_html(update.message, message)
 
@@ -457,32 +437,35 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         reminders = db.search_reminders_fuzzy(chat_id, search_term)
         search_type = "palabra"
+    history = db.search_reminder_history(chat_id, search_term, by_category=is_category,
+                                         limit=SEARCH_HISTORY_LIMIT)
 
-    if not reminders:
+    if not reminders and not history:
         await update.message.reply_text(f"🔍 No se encontraron recordatorios con {search_type}: \"{search_term}\"")
         return
+
+    def entry(reminder):
+        text_html = None if is_category else highlight(reminder['text'], search_term)
+        return _reminder_entry(reminder, "%d/%m/%Y %H:%M", text_html=text_html)
 
     if is_category:
         message = f"🔍 <b>Recordatorios de categoría \"{escape(search_term)}\":</b>\n\n"
     else:
         message = f"🔍 <b>Recordatorios encontrados con \"{escape(search_term)}\":</b>\n\n"
 
-    for reminder in reminders:
-        formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
+    if reminders:
+        message += "\n".join(entry(reminder) for reminder in reminders)
+    else:
+        message += "<i>Ninguno pendiente.</i>\n"
 
-        # Highlight the keyword in the text - only for text search
-        if is_category:
-            highlighted_text = escape(reminder['text'])
-        else:
-            highlighted_text = highlight(reminder['text'], search_term)
-
-        message += f"🔔 <b>#{reminder['id']}</b> - {formatted_date}\n"
-        message += f"   {highlighted_text}\n\n"
+    if history:
+        message += f"\n📜 <b>En el historial</b> <i>(los últimos {SEARCH_HISTORY_LIMIT} como mucho)</i>:\n\n"
+        message += "\n".join(entry(reminder) for reminder in history)
 
     await reply_html(update.message, message)
 
 async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /dia command."""
+    """Handle the /dia command: every reminder of a day, past or future, with its status."""
     if not context.args:
         await update.message.reply_text(
             "❌ Uso: /dia <fecha>\n"
@@ -512,147 +495,77 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Check if the date is in the past to show all reminders (including sent/cancelled)
-    import pytz
-    now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
-    is_past_date = target_date.date() < now.date()
-
-    # Get reminders for that date
-    if is_past_date:
-        reminders = db.get_all_date_reminders_including_past(chat_id, target_date)
-    else:
-        reminders = db.get_date_reminders(chat_id, target_date)
-
-    # Format date for display
-    formatted_date = target_date.strftime("%d/%m/%Y")
-    weekday = target_date.strftime("%A")
-
-    # Translate weekday to Spanish
-    weekday_spanish = {
-        'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
-        'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
-    }
-    weekday = weekday_spanish.get(weekday, weekday)
+    reminders = db.get_date_reminders(chat_id, target_date)
+    day_label = f"{scheduler.WEEKDAYS_ES[target_date.weekday()]} {target_date.strftime('%d/%m/%Y')}"
 
     if not reminders:
-        past_indicator = "(incluyendo enviados/cancelados)" if is_past_date else ""
-        await update.message.reply_text(f"📅 No tienes recordatorios para el {weekday} {formatted_date} {past_indicator}.")
+        await update.message.reply_text(f"📅 No tienes recordatorios para el {day_label}.")
         return
 
-    past_indicator = "📋 <b>Historial completo</b> - " if is_past_date else ""
-    message = f"📅 {past_indicator}<b>Recordatorios para {weekday} {formatted_date}:</b>\n\n"
+    entries = "\n".join(_reminder_entry(reminder, "%H:%M") for reminder in reminders)
+    await reply_html(update.message, f"📅 <b>Recordatorios para el {day_label}:</b>\n\n{entries}")
 
-    for reminder in reminders:
-        # Show only time for same-day reminders
-        reminder_datetime = datetime.fromisoformat(reminder['datetime'])
-        formatted_time = reminder_datetime.strftime("%H:%M")
+# /historial [filtro] [cantidad]
+HISTORY_FILTERS = {
+    'enviados': 'sent', 'sent': 'sent',
+    'completados': 'completed', 'completed': 'completed',
+    'cancelados': 'cancelled', 'cancelled': 'cancelled',
+    'fallidos': 'failed', 'failed': 'failed',
+    'todos': None, 'all': None,
+}
+HISTORY_TITLES = {
+    'sent': 'enviados',
+    'completed': 'completados',
+    'cancelled': 'cancelados',
+    'failed': 'que no se pudieron enviar',
+}
+HISTORY_DEFAULT_LIMIT = 20
+HISTORY_MAX_LIMIT = 100
 
-        # Status indicators for past dates
-        if is_past_date and 'status' in reminder:
-            status_emoji = {
-                'active': '⏰',
-                'sent': '✅',
-                'cancelled': '❌',
-                'completed': '🏁',
-                'failed': '⚠️'
-            }.get(reminder['status'], '🔔')
-        else:
-            status_emoji = '🔔'
-
-        # Important indicator
-        important_indicator = '🔥 ' if reminder.get('is_important') else ''
-
-        message += f"{status_emoji} {important_indicator}<b>#{reminder['id']}</b> - {formatted_time}\n"
-        message += f"   {escape(reminder['text'])}\n"
-
-        # Show status for past dates
-        if is_past_date and 'status' in reminder and reminder['status'] != 'active':
-            status_text = {
-                'sent': '(Enviado)',
-                'cancelled': '(Cancelado)',
-                'completed': '(Completado)',
-                'failed': '(No se pudo enviar)'
-            }.get(reminder['status'], '')
-            if status_text:
-                message += f"   <i>{status_text}</i>\n"
-
-        message += "\n"
-
-    await reply_html(update.message, message)
+# Finished reminders shown under the pending ones in /buscar
+SEARCH_HISTORY_LIMIT = 10
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /historial command."""
+    """Handle the /historial command: finished reminders, by status, as many as asked (up to 100)."""
     chat_id = update.effective_chat.id
 
-    # Parse filter argument
     status_filter = None
-    if context.args:
-        filter_arg = context.args[0].lower()
-        if filter_arg in ['enviados', 'sent']:
-            status_filter = 'sent'
-        elif filter_arg in ['cancelados', 'cancelled']:
-            status_filter = 'cancelled'
-        elif filter_arg in ['fallidos', 'failed']:
-            status_filter = 'failed'
-        elif filter_arg not in ['todos', 'all']:
+    limit = HISTORY_DEFAULT_LIMIT
+    for argument in (context.args or []):
+        argument = argument.lower()
+        if argument.isdigit():
+            limit = max(1, min(int(argument), HISTORY_MAX_LIMIT))
+        elif argument in HISTORY_FILTERS:
+            status_filter = HISTORY_FILTERS[argument]
+        else:
             await update.message.reply_text(
-                "❌ Filtro inválido. Usa:\n"
+                "❌ Uso: /historial [filtro] [cantidad]\n"
                 "• /historial\n"
                 "• /historial enviados\n"
+                "• /historial completados\n"
                 "• /historial cancelados\n"
-                "• /historial fallidos"
+                "• /historial fallidos\n"
+                f"• /historial 50 (hasta {HISTORY_MAX_LIMIT})"
             )
             return
 
-    reminders = db.get_historical_reminders(chat_id, status_filter)
+    reminders = db.get_historical_reminders(chat_id, status_filter, limit)
+    title = HISTORY_TITLES.get(status_filter)
 
     if not reminders:
-        if status_filter == 'sent':
-            message = "📜 No tienes recordatorios enviados."
-        elif status_filter == 'cancelled':
-            message = "📜 No tienes recordatorios cancelados."
-        elif status_filter == 'failed':
-            message = "📜 No hay recordatorios que no se hayan podido enviar."
+        if title:
+            await update.message.reply_text(f"📜 No tienes recordatorios {title}.")
         else:
-            message = "📜 No tienes historial de recordatorios."
-
-        await update.message.reply_text(message)
+            await update.message.reply_text("📜 No tienes historial de recordatorios.")
         return
 
-    # Build header message
-    if status_filter == 'sent':
-        header = "📜 <b>Recordatorios enviados:</b>"
-    elif status_filter == 'cancelled':
-        header = "📜 <b>Recordatorios cancelados:</b>"
-    elif status_filter == 'failed':
-        header = "📜 <b>Recordatorios que no se pudieron enviar:</b>"
-    else:
-        header = "📜 <b>Historial de recordatorios:</b>"
+    header = f"📜 <b>Recordatorios {title}:</b>" if title else "📜 <b>Historial de recordatorios:</b>"
+    entries = "\n".join(_reminder_entry(reminder, "%d/%m/%Y %H:%M") for reminder in reminders)
+    footer = f"<i>(Mostrando los últimos {len(reminders)})</i>"
+    if len(reminders) == limit and limit < HISTORY_MAX_LIMIT:
+        footer = f"<i>(Mostrando los últimos {len(reminders)}. Para ver más: /historial {HISTORY_MAX_LIMIT})</i>"
 
-    message = f"{header}\n\n"
-
-    for reminder in reminders:
-        formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
-
-        # Status emoji and text
-        if reminder['status'] == 'sent':
-            status_emoji = "✅"
-            status_text = "Enviado"
-        elif reminder['status'] == 'cancelled':
-            status_emoji = "❌"
-            status_text = "Cancelado"
-        elif reminder['status'] == 'failed':
-            status_emoji = "⚠️"
-            status_text = "No se pudo enviar"
-        else:
-            status_emoji = "❓"
-            status_text = reminder['status']
-
-        message += f"{status_emoji} <b>#{reminder['id']}</b> - {formatted_date} ({status_text})\n"
-        message += f"   {escape(reminder['text'])}\n\n"
-
-    message += f"<i>(Mostrando últimos {len(reminders)} recordatorios)</i>"
-    await reply_html(update.message, message)
+    await reply_html(update.message, f"{header}\n\n{entries}\n{footer}")
 
 async def vault_history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /historialBitacora command."""
@@ -2432,7 +2345,7 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '📋 Lista de recordatorios del día actual',
                 '⏰ Ordenados por hora cronológicamente',
                 '🔥 Destaca recordatorios importantes',
-                '📊 Muestra pendientes y enviados',
+                '📊 Muestra pendientes, enviados, completados y los que no se pudieron enviar',
                 '🕐 Formato de hora claro (HH:MM)'
             ]
         },
@@ -2451,15 +2364,15 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'semana': {
             'title': '📊 **Comando /semana**',
             'description': 'Muestra recordatorios de toda la semana organizados por día',
-            'syntax': '`/semana [pendientes]`',
+            'syntax': '`/semana [todos]`',
             'examples': [
-                '/semana - Ver toda la semana',
-                '/semana pendientes - Solo recordatorios activos'
+                '/semana - Solo los pendientes',
+                '/semana todos - También los enviados y completados'
             ],
             'features': [
                 '🗓️ Vista semanal completa',
                 '📅 Agrupado por día de la semana',
-                '🔍 Filtro opcional de solo pendientes',
+                '🔍 Pendientes por defecto, todos con "todos"',
                 '📈 Perfecto para planificación',
                 '🏷️ Incluye categorías y horarios'
             ]
@@ -2479,21 +2392,23 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '🏷️ Búsqueda por categoría',
                 '📝 Búsqueda en contenido completo',
                 '✨ Ignora tildes y mayúsculas',
-                '📊 Resultados ordenados por relevancia'
+                '📜 También muestra los últimos 10 del historial que coinciden'
             ]
         },
         'historial': {
             'title': '📚 **Comando /historial**',
-            'description': 'Muestra recordatorios pasados (enviados y cancelados)',
-            'syntax': '`/historial [límite]`',
+            'description': 'Muestra recordatorios terminados: enviados, completados, cancelados y fallidos',
+            'syntax': '`/historial [filtro] [cantidad]`',
             'examples': [
                 '/historial - Últimos 20 recordatorios',
-                '/historial 50 - Últimos 50 recordatorios'
+                '/historial 50 - Últimos 50 recordatorios',
+                '/historial completados',
+                '/historial cancelados 100'
             ],
             'features': [
                 '📜 Historial completo de recordatorios',
-                '✅❌ Incluye enviados y cancelados',
-                '🔢 Límite configurable de resultados',
+                '✅🏁❌⚠️ Filtros: enviados, completados, cancelados, fallidos',
+                '🔢 Hasta 100 resultados',
                 '📅 Ordenados por fecha descendente',
                 '🏷️ Muestra categoría y estado'
             ]
@@ -2712,6 +2627,7 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '📅 Fechas pasadas, presentes y futuras',
                 '🗓️ Formatos flexibles (DD/MM, día de semana)',
                 '⏰ Muestra horarios completos',
+                '📊 Estado de cada uno: pendiente, enviado, completado o fallido',
                 '📝 Incluye descripciones completas'
             ]
         },

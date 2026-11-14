@@ -87,16 +87,16 @@ python3 bot.py
 - `/start` - Mensaje de bienvenida
 - `/recordar <fecha/hora> <texto>` - Crear recordatorios
 - `/lista [filtro]` - Ver recordatorios por categoría
-- `/hoy` - Recordatorios de hoy (pendientes y enviados)
+- `/hoy` - Recordatorios de hoy, con su estado (pendiente, enviado, completado)
 - `/manana` - Recordatorios pendientes de mañana
-- `/semana [pendientes]` - Vista semanal completa
-- `/dia <fecha>` - Ver cualquier día (incluye "ayer", fechas pasadas)
-- `/buscar <término>` - Búsqueda inteligente
-- `/historial [límite]` - Recordatorios pasados
+- `/semana [todos]` - Pendientes de la semana; con `todos`, también los enviados y completados
+- `/dia <fecha>` - Ver cualquier día, pasado o futuro, con el estado de cada recordatorio
+- `/buscar <término>` - Búsqueda inteligente en los pendientes y en el historial
+- `/historial [filtro] [cantidad]` - Recordatorios terminados; filtros: `enviados`, `completados`, `cancelados`, `fallidos`; hasta 100
 - `/repetir <id> [nueva_fecha]` - Duplicar recordatorios
 - `/cancelar <id>` - Cancelar recordatorio(s)
 - `/importante <intervalo> <fecha> <texto>` - Recordatorios que se repiten
-- `/completar <id>` - Completar recordatorios importantes
+- `/completar <id>` - Completar un recordatorio (detiene la repetición de los importantes)
 - `/exportar [completo]` - Exportar a PDF
 
 ### 🌙 **Resumen nocturno automático:**
@@ -131,7 +131,7 @@ python3 bot.py
 /repetir 14 en dos horas
 /importante 15 hoy a las 21:00 tomar pastilla
 /dia ayer
-/semana pendientes
+/semana todos
 /exportar completo
 ```
 

@@ -1,7 +1,7 @@
 import sqlite3
 import logging
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import unicodedata
 import pytz
 from migrations import MigrationManager
@@ -118,92 +118,66 @@ def get_active_reminders(chat_id: int) -> List[Dict]:
 
     return reminders
 
-def get_today_reminders(chat_id: int) -> List[Dict]:
-    """Get all active and sent reminders for today for a chat."""
-    import pytz
+# What a day shows (/hoy, /dia, /semana todos): cancelled reminders only appear in /historial
+def _reminder_with_status(row) -> Dict:
+    """Row: id, text, datetime, status, is_important, repeat_interval."""
+    return {
+        'id': row[0],
+        'text': row[1],
+        'datetime': _aware(row[2]),
+        'status': row[3],
+        'is_important': bool(row[4]),
+        'repeat_interval': row[5]
+    }
 
-    # Get today's date range in Buenos Aires timezone
-    timezone = pytz.timezone('America/Argentina/Buenos_Aires')
-    now = datetime.now(timezone)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-
+def _reminders_between(chat_id: int, start: datetime, end: datetime, only_active: bool) -> List[Dict]:
+    """Reminders of a chat from start to end; all but cancelled ones, or only active ones."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, text, datetime, status
-        FROM reminders
-        WHERE chat_id = ? AND status IN ('active', 'sent')
-        AND datetime >= ? AND datetime <= ?
-        ORDER BY datetime
-    ''', (chat_id, today_start.isoformat(), today_end.isoformat()))
+    if only_active:
+        cursor.execute('''
+            SELECT id, text, datetime, status, is_important, repeat_interval
+            FROM reminders
+            WHERE chat_id = ? AND status = 'active'
+            AND datetime >= ? AND datetime <= ?
+            ORDER BY datetime
+        ''', (chat_id, start.isoformat(), end.isoformat()))
+    else:
+        cursor.execute('''
+            SELECT id, text, datetime, status, is_important, repeat_interval
+            FROM reminders
+            WHERE chat_id = ? AND status IN ('active', 'sent', 'completed', 'failed')
+            AND datetime >= ? AND datetime <= ?
+            ORDER BY datetime
+        ''', (chat_id, start.isoformat(), end.isoformat()))
 
     rows = cursor.fetchall()
     conn.close()
 
-    reminders = []
-    for row in rows:
-        reminders.append({
-            'id': row[0],
-            'text': row[1],
-            'datetime': datetime.fromisoformat(row[2]),
-            'status': row[3]
-        })
+    return [_reminder_with_status(row) for row in rows]
 
-    return reminders
+def _day_bounds(day: datetime) -> Tuple[datetime, datetime]:
+    day = BUENOS_AIRES.localize(day) if day.tzinfo is None else day.astimezone(BUENOS_AIRES)
+    return (day.replace(hour=0, minute=0, second=0, microsecond=0),
+            day.replace(hour=23, minute=59, second=59, microsecond=999999))
+
+def get_today_reminders(chat_id: int) -> List[Dict]:
+    """Today's reminders of a chat, with their status (not cancelled ones)."""
+    return _reminders_between(chat_id, *_day_bounds(datetime.now(BUENOS_AIRES)), only_active=False)
+
+def get_date_reminders(chat_id: int, target_date: datetime) -> List[Dict]:
+    """The reminders of a day, past or future, with their status (not cancelled ones)."""
+    return _reminders_between(chat_id, *_day_bounds(target_date), only_active=False)
 
 def get_week_reminders(chat_id: int, include_sent: bool = False) -> List[Dict]:
-    """Get reminders for the current week for a chat.
-
-    Args:
-        chat_id: The chat ID
-        include_sent: If True, include sent reminders. If False, only active reminders.
-    """
-    import pytz
+    """This week's reminders (Monday to Sunday): pending ones, or all but cancelled ones."""
     from datetime import timedelta
 
-    # Get this week's date range in Buenos Aires timezone
-    timezone = pytz.timezone('America/Argentina/Buenos_Aires')
-    now = datetime.now(timezone)
-
-    # Get start of week (Monday)
-    days_since_monday = now.weekday()
-    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_monday)
-
-    # Get end of week (Sunday)
-    week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999999)
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # Choose status filter based on include_sent parameter
-    if include_sent:
-        status_filter = "status IN ('active', 'sent')"
-    else:
-        status_filter = "status = 'active'"
-
-    cursor.execute(f'''
-        SELECT id, text, datetime, status
-        FROM reminders
-        WHERE chat_id = ? AND {status_filter}
-        AND datetime >= ? AND datetime <= ?
-        ORDER BY datetime
-    ''', (chat_id, week_start.isoformat(), week_end.isoformat()))
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    reminders = []
-    for row in rows:
-        reminders.append({
-            'id': row[0],
-            'text': row[1],
-            'datetime': datetime.fromisoformat(row[2]),
-            'status': row[3]
-        })
-
-    return reminders
+    now = datetime.now(BUENOS_AIRES)
+    monday, _ = _day_bounds(now - timedelta(days=now.weekday()))
+    _, sunday_end = _day_bounds(monday + timedelta(days=6))
+    return _reminders_between(chat_id, monday, sunday_end, only_active=not include_sent)
 
 def search_reminders(chat_id: int, keyword: str) -> List[Dict]:
     """Search active reminders by keyword in text."""
@@ -234,62 +208,29 @@ def search_reminders(chat_id: int, keyword: str) -> List[Dict]:
 
     return reminders
 
-def get_date_reminders(chat_id: int, target_date: datetime) -> List[Dict]:
-    """Get all active reminders for a specific date."""
-    import pytz
-
-    # Ensure target_date has timezone info
-    if target_date.tzinfo is None:
-        timezone = pytz.timezone('America/Argentina/Buenos_Aires')
-        target_date = timezone.localize(target_date)
-
-    # Get date range for the target day
-    day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT id, text, datetime
-        FROM reminders
-        WHERE chat_id = ? AND status = 'active'
-        AND datetime >= ? AND datetime <= ?
-        ORDER BY datetime
-    ''', (chat_id, day_start.isoformat(), day_end.isoformat()))
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    reminders = []
-    for row in rows:
-        reminders.append({
-            'id': row[0],
-            'text': row[1],
-            'datetime': datetime.fromisoformat(row[2])
-        })
-
-    return reminders
+FINISHED_STATUSES = ('sent', 'completed', 'cancelled', 'failed')
 
 def get_historical_reminders(chat_id: int, status_filter: Optional[str] = None, limit: int = 20) -> List[Dict]:
-    """Get historical reminders (sent/cancelled/failed) for a chat."""
+    """Finished reminders of a chat (sent, completed, cancelled, failed), newest first.
+
+    status_filter keeps only one of those statuses.
+    """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    if status_filter and status_filter in ['sent', 'cancelled', 'failed']:
+    if status_filter in FINISHED_STATUSES:
         cursor.execute('''
-            SELECT id, text, datetime, status
+            SELECT id, text, datetime, status, is_important, repeat_interval
             FROM reminders
             WHERE chat_id = ? AND status = ?
             ORDER BY datetime DESC
             LIMIT ?
         ''', (chat_id, status_filter, limit))
     else:
-        # Sent, cancelled and the ones that could not be delivered
         cursor.execute('''
-            SELECT id, text, datetime, status
+            SELECT id, text, datetime, status, is_important, repeat_interval
             FROM reminders
-            WHERE chat_id = ? AND status IN ('sent', 'cancelled', 'failed')
+            WHERE chat_id = ? AND status IN ('sent', 'completed', 'cancelled', 'failed')
             ORDER BY datetime DESC
             LIMIT ?
         ''', (chat_id, limit))
@@ -297,16 +238,38 @@ def get_historical_reminders(chat_id: int, status_filter: Optional[str] = None, 
     rows = cursor.fetchall()
     conn.close()
 
-    reminders = []
-    for row in rows:
-        reminders.append({
-            'id': row[0],
-            'text': row[1],
-            'datetime': datetime.fromisoformat(row[2]),
-            'status': row[3]
-        })
+    return [_reminder_with_status(row) for row in rows]
 
-    return reminders
+def search_reminder_history(chat_id: int, term: str, by_category: bool = False, limit: int = 10) -> List[Dict]:
+    """Finished reminders whose text contains term (accent-insensitive) or with that category.
+
+    Newest first, at most limit.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, text, datetime, status, is_important, repeat_interval, category
+        FROM reminders
+        WHERE chat_id = ? AND status IN ('sent', 'completed', 'cancelled', 'failed')
+        ORDER BY datetime DESC
+    ''', (chat_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    normalized_term = normalize_text_for_search(term)
+    matches = []
+    for row in rows:
+        if by_category:
+            found = (row[6] or '').lower() == term.lower()
+        else:
+            found = normalized_term in normalize_text_for_search(row[1])
+        if found:
+            matches.append(_reminder_with_status(row))
+            if len(matches) == limit:
+                break
+    return matches
 
 def get_all_active_reminders() -> List[Dict]:
     """Active regular reminders from all chats. Important ones: get_active_important_reminders."""
@@ -1343,44 +1306,6 @@ def get_reminder_by_id(chat_id: int, reminder_id: int) -> dict:
 
     return None
 
-def get_all_date_reminders_including_past(chat_id: int, target_date: datetime) -> List[Dict]:
-    """Get ALL reminders for a specific date, including sent and cancelled ones."""
-    import pytz
-
-    # Ensure target_date has timezone info
-    if target_date.tzinfo is None:
-        timezone = pytz.timezone('America/Argentina/Buenos_Aires')
-        target_date = timezone.localize(target_date)
-
-    # Get date range for the target day
-    day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT id, text, datetime, status, category, is_important, repeat_interval
-        FROM reminders
-        WHERE chat_id = ?
-        AND datetime >= ? AND datetime <= ?
-        ORDER BY datetime
-    ''', (chat_id, day_start.isoformat(), day_end.isoformat()))
-
-    reminders = []
-    for row in cursor.fetchall():
-        reminders.append({
-            'id': row[0],
-            'text': row[1],
-            'datetime': row[2],
-            'status': row[3],
-            'category': row[4],
-            'is_important': bool(row[5]) if row[5] is not None else False,
-            'repeat_interval': row[6]
-        })
-
-    conn.close()
-    return reminders
 def get_all_active_reminders_for_date(target_date: datetime) -> Dict[int, List[Dict]]:
     """Get active reminders for a specific date across all chats, grouped by chat_id."""
     import pytz
