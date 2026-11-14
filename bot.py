@@ -123,7 +123,8 @@ def main():
         application.run_polling(
             # callback_query: buttons, such as approving a /novia request
             allowed_updates=['message', 'callback_query'],
-            drop_pending_updates=True,
+            # Messages sent while the bot was down (a deploy) are answered when it is back
+            drop_pending_updates=False,
             close_loop=False
         )
 

@@ -552,7 +552,8 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'active': '⏰',
                 'sent': '✅',
                 'cancelled': '❌',
-                'completed': '🏁'
+                'completed': '🏁',
+                'failed': '⚠️'
             }.get(reminder['status'], '🔔')
         else:
             status_emoji = '🔔'
@@ -568,7 +569,8 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status_text = {
                 'sent': '(Enviado)',
                 'cancelled': '(Cancelado)',
-                'completed': '(Completado)'
+                'completed': '(Completado)',
+                'failed': '(No se pudo enviar)'
             }.get(reminder['status'], '')
             if status_text:
                 message += f"   _{status_text}_\n"
@@ -589,12 +591,15 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status_filter = 'sent'
         elif filter_arg in ['cancelados', 'cancelled']:
             status_filter = 'cancelled'
+        elif filter_arg in ['fallidos', 'failed']:
+            status_filter = 'failed'
         elif filter_arg not in ['todos', 'all']:
             await update.message.reply_text(
                 "❌ Filtro inválido. Usa:\n"
                 "• /historial\n"
                 "• /historial enviados\n"
-                "• /historial cancelados"
+                "• /historial cancelados\n"
+                "• /historial fallidos"
             )
             return
 
@@ -605,6 +610,8 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = "📜 No tienes recordatorios enviados."
         elif status_filter == 'cancelled':
             message = "📜 No tienes recordatorios cancelados."
+        elif status_filter == 'failed':
+            message = "📜 No hay recordatorios que no se hayan podido enviar."
         else:
             message = "📜 No tienes historial de recordatorios."
 
@@ -616,6 +623,8 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         header = "📜 **Recordatorios enviados:**"
     elif status_filter == 'cancelled':
         header = "📜 **Recordatorios cancelados:**"
+    elif status_filter == 'failed':
+        header = "📜 **Recordatorios que no se pudieron enviar:**"
     else:
         header = "📜 **Historial de recordatorios:**"
 
@@ -631,6 +640,9 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif reminder['status'] == 'cancelled':
             status_emoji = "❌"
             status_text = "Cancelado"
+        elif reminder['status'] == 'failed':
+            status_emoji = "⚠️"
+            status_text = "No se pudo enviar"
         else:
             status_emoji = "❓"
             status_text = reminder['status']
@@ -823,7 +835,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if reminder_ids:
             cancelled_count = db.cancel_all_reminders(chat_id)
-            scheduler.cancel_multiple_reminder_jobs(reminder_ids)
+            scheduler.cancel_reminders(reminder_ids)
             await update.message.reply_text(f"❌ Se cancelaron {cancelled_count} recordatorios")
         else:
             await update.message.reply_text("📝 No tienes recordatorios activos para cancelar")
@@ -841,14 +853,14 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Single reminder - use original logic for backward compatibility
         reminder_id = reminder_ids[0]
         if db.cancel_reminder(chat_id, reminder_id):
-            scheduler.cancel_reminder_job(reminder_id)
+            scheduler.cancel_reminder(reminder_id)
             await update.message.reply_text(f"❌ Recordatorio #{reminder_id} cancelado")
         else:
             await update.message.reply_text(f"❌ No se encontró el recordatorio #{reminder_id}")
     else:
         # Multiple reminders
         db_result = db.cancel_multiple_reminders(chat_id, reminder_ids)
-        scheduler.cancel_multiple_reminder_jobs(db_result["cancelled"])
+        scheduler.cancel_reminders(db_result["cancelled"])
 
         # Build response message
         message_parts = []
@@ -2217,16 +2229,16 @@ async def complete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ El ID debe ser un número.")
         return
 
-    # Mark as completed
-    success = db.complete_important_reminder(chat_id, reminder_id)
+    reminder = db.get_active_reminder(reminder_id)
+    if reminder is None or reminder['chat_id'] != chat_id or not db.complete_reminder(chat_id, reminder_id):
+        await update.message.reply_text(f"❌ No se encontró un recordatorio activo con ID #{reminder_id}.")
+        return
 
-    if success:
+    scheduler.cancel_reminder(reminder_id)
+    if reminder['is_important']:
         await update.message.reply_text(f"✅ Recordatorio importante #{reminder_id} completado. ¡No se repetirá más!")
-
-        # Cancel from scheduler
-        scheduler.cancel_reminder(reminder_id)
     else:
-        await update.message.reply_text(f"❌ No se encontró un recordatorio importante activo con ID #{reminder_id}.")
+        await update.message.reply_text(f"✅ Recordatorio #{reminder_id} completado. Ya no te lo voy a mandar.")
 
 async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /repetir command to duplicate an existing reminder."""
@@ -2287,6 +2299,13 @@ async def repeat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # Use original datetime if no new one provided
         new_datetime = datetime.fromisoformat(original_reminder['datetime'])
+        if not _is_future(new_datetime):
+            await update.message.reply_text(
+                f"❌ La fecha original del #{reminder_id} ya pasó. Decime cuándo:\n\n"
+                f"• /repetir {reminder_id} mañana a las 10\n"
+                f"• /repetir {reminder_id} el viernes a las 9"
+            )
+            return
 
     # Create the duplicate reminder
     if original_reminder['is_important']:
@@ -2515,12 +2534,12 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         },
         'completar': {
             'title': '🏁 **Comando /completar**',
-            'description': 'Detiene la repetición de recordatorios importantes',
+            'description': 'Marca un recordatorio como completado y detiene su repetición',
             'syntax': '`/completar <id>`',
             'examples': ['/completar 123'],
             'features': [
-                '🔥 Específico para recordatorios importantes',
-                '⏹️ Detiene repetición automática',
+                '🔥 Detiene la repetición de los importantes',
+                '⏹️ Un recordatorio normal ya no se envía',
                 '✅ Marca como completado',
                 '📊 Libera recursos del scheduler',
                 '🎯 Acción definitiva e irreversible'

@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "2026-11-14",
+      "notes": [
+        "Si me reinicio, ya no se pierden recordatorios: los que vencen mientras estoy caído te llegan apenas vuelvo, avisando que llegan con demora.",
+        "Los mensajes que me mandes mientras me reinicio los respondo cuando vuelvo.",
+        "`/cancelar` ahora también frena los recordatorios importantes, y `/completar` sirve para cualquier recordatorio.",
+        "Los importantes insisten hasta 50 veces. En el último aviso te digo que dejo de insistir.",
+        "Si un recordatorio no se puede enviar, lo reintento. Los que no llegaron aparecen en `/historial fallidos`."
+      ]
+    },
+    {
       "version": "2026-11-13",
       "notes": [
         "Entiendo mejor fechas y horas: `a las 12` ya no da error, y ahora entiendo `el viernes a las 10`, `mañana a las 9 de la noche`, `25 de diciembre`, `en 2 semanas`, `esta noche` y `antes de las 5`.",
