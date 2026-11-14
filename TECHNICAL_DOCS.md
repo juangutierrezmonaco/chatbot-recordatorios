@@ -29,6 +29,9 @@ chatbot-recordatorios/
 ├── handlers.py           # Manejadores de comandos y mensajes
 ├── db.py                 # Capa de acceso a datos
 ├── scheduler.py          # Gestión de recordatorios programados
+├── formatting.py         # Respuestas en HTML: escapado y mensajes largos
+├── access.py             # Quién puede usar los modos admin y novia
+├── announcements.py      # Aviso de novedades después de cada deploy
 ├── transcription.py      # Transcripción de mensajes de voz
 ├── migrations.py         # Sistema de migraciones de BD
 ├── migrations/           # Archivos de migración SQL
@@ -294,6 +297,15 @@ def record_important_reminder_sent(reminder_id) -> bool       # last_sent y time
 def get_active_reminder(reminder_id) -> Optional[Dict]       # lo que necesita el scheduler
 def get_active_important_reminders() -> List[Dict]
 ```
+
+## ✉️ Formato de las respuestas (`formatting.py`)
+
+Todas las respuestas con formato van en HTML. Así ningún texto del usuario puede romperlas: antes, un recordatorio con `mi_archivo` hacía fallar `/lista`, `/hoy` y `/semana` hasta que se enviara.
+
+- **Texto del usuario**: siempre pasa por `escape()`, o por `highlight()` en las búsquedas, que además pone en negrita el término buscado.
+- **Formato propio**: etiquetas `<b>`, `<i>` y `<code>` que abren y cierran en la misma línea.
+- **Mensajes largos**: `reply_html()` parte en varios mensajes de hasta 4000 caracteres, primero entre bloques (un recordatorio no queda cortado), después entre líneas y por último entre palabras.
+- **Referencia**: `tests/test_formatting.py` corre los comandos con textos que antes los rompían y verifica que cada respuesta sea HTML válido y entre en un mensaje.
 
 ## 🔍 Sistema de Búsqueda Avanzada
 
@@ -724,7 +736,7 @@ explanations = {
 - **Cobertura completa**: Todos los comandos principales documentados
 - **Ejemplos prácticos**: Casos de uso reales para cada comando
 - **Características detalladas**: Explicación técnica de capacidades
-- **Formato Markdown**: Presentación clara y estructurada
+- **Formato HTML**: los textos fijos se escriben con `**negrita**` y `` `código` `` y `formatting.from_markdown()` los pasa a HTML
 
 ## 🎮 Funcionalidades Románticas
 
