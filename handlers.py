@@ -6,7 +6,7 @@ from typing import Tuple, List, Optional
 import unicodedata
 import pytz
 import dateparser
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
 from telegram.ext import ContextTypes
 import access
@@ -2598,12 +2598,12 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         },
         'novia': {
             'title': '💕 **Comando /novia**',
-            'description': 'Activa modo especial romántico con validación',
+            'description': 'Pide el modo especial romántico respondiendo una pregunta',
             'syntax': '`/novia`',
             'examples': ['/novia'],
             'features': [
                 '💖 Modo especial para parejas',
-                '🔐 Validación con frases románticas',
+                '🔐 Validación con frase romántica y aprobación del administrador',
                 '🎁 Desbloquea comando /sorpresa',
                 '🌹 Acceso a fortuna romántica',
                 '✨ Experiencia personalizada'
@@ -2630,7 +2630,7 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'features': [
                 '🔐 Solo para el administrador del bot',
                 '📸 Subir sorpresas a la galería',
-                '💕 Ver quién tiene el modo especial y quitárselo'
+                '💕 Aprobar los pedidos del modo especial, ver quién lo tiene y quitárselo'
             ]
         },
         'subirSorpresa': {
@@ -2828,8 +2828,17 @@ async def girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("💕 El modo especial se activa en un chat privado conmigo.")
         return
 
-    if not access.girlfriend_mode_available():
-        logger.warning(f"/novia used but {access.GIRLFRIEND_PHRASE_VARIABLE} is not set")
+    request = db.get_girlfriend_request(chat_id)
+    if request == db.GIRLFRIEND_REQUEST_PENDING:
+        await update.message.reply_text(GIRLFRIEND_REQUEST_SENT_MESSAGE)
+        return
+
+    if not access.girlfriend_mode_available() or request == db.GIRLFRIEND_REQUEST_REJECTED:
+        if not access.girlfriend_mode_available():
+            logger.warning(
+                f"/novia used but {access.GIRLFRIEND_PHRASE_VARIABLE} or "
+                f"{access.ADMIN_USER_IDS_VARIABLE} is not set"
+            )
         await update.message.reply_text("🔒 El modo especial no está disponible por ahora.")
         return
 
@@ -2849,28 +2858,66 @@ async def girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Mark this chat as pending girlfriend validation
     context.user_data['pending_girlfriend_validation'] = True
 
+GIRLFRIEND_REQUEST_SENT_MESSAGE = (
+    "⏳ Ya está pedido: falta que aprueben tu acceso.\n\n"
+    "Te aviso apenas esté listo ✨"
+)
+
+GIRLFRIEND_WELCOME_MESSAGE = (
+    "🥰KEASHEEEEE\n\n"
+    "Hola culo 💕\n\n"
+    "🌟 Ahora tenés acceso a comandos especiales:\n"
+    "• `/fortuna` - Tu fortuna del día\n"
+    "• `/sorpresa` - Una sorpresita\n\n"
+    "Te amo muchísimo"
+)
+
+GIRLFRIEND_REJECTED_MESSAGE = "💔 Esta vez no se aprobó el acceso al modo especial."
+
+# Buttons of the request sent to the admins: novia:approve:<chat_id> / novia:reject:<chat_id>
+GIRLFRIEND_REQUEST_BUTTON_PATTERN = r'^novia:(approve|reject):(-?\d+)$'
+
+def _chat_label(first_name: Optional[str], username: Optional[str], chat_id: int) -> str:
+    name = first_name or (f"@{username}" if username else "Sin nombre")
+    return f"{name} ({chat_id})"
+
+async def _notify_admins_of_girlfriend_request(bot, label: str, chat_id: int) -> int:
+    """Send the request with approve/reject buttons to every admin. Returns how many got it."""
+    buttons = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Aprobar", callback_data=f"novia:approve:{chat_id}"),
+        InlineKeyboardButton("❌ Rechazar", callback_data=f"novia:reject:{chat_id}"),
+    ]])
+    text = (
+        "💕 Pedido de modo especial\n\n"
+        f"{label} respondió bien la pregunta de /novia."
+    )
+
+    delivered = 0
+    for admin_id in access.admin_user_ids():
+        try:
+            await bot.send_message(chat_id=admin_id, text=text, reply_markup=buttons)
+            delivered += 1
+        except Exception as error:
+            logger.warning(f"Could not send the girlfriend mode request to admin {admin_id}: {error}")
+    return delivered
+
 async def process_girlfriend_validation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process girlfriend validation answer."""
+    """Process girlfriend validation answer: a right one sends the admins a request."""
     chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
     user_text = update.message.text
 
     if access.is_girlfriend_answer(user_text):
-        # Correct answer! Activate girlfriend mode
         access.clear_failed_attempts(user_id)
-        success = db.set_girlfriend_mode(chat_id)
 
-        if success:
-            await update.message.reply_text(
-                "🥰KEASHEEEEE\n\n"
-                "Hola culo 💕\n\n"
-                "🌟 Ahora tenés acceso a comandos especiales:\n"
-                "• `/fortuna` - Tu fortuna del día\n"
-                "• `/sorpresa` - Una sorpresita\n\n"
-                "Te amo muchísimo"
-            )
+        if db.request_girlfriend_mode(chat_id):
+            label = _chat_label(user.first_name, user.username, chat_id)
+            if not await _notify_admins_of_girlfriend_request(context.bot, label, chat_id):
+                logger.error(f"No admin got the girlfriend mode request from chat {chat_id}; it is listed in /admin")
+            await update.message.reply_text(f"🥰 ¡Esa es! 💕\n\n{GIRLFRIEND_REQUEST_SENT_MESSAGE}")
         else:
-            await update.message.reply_text("❌ Hubo un error activando el modo especial. Intenta de nuevo.")
+            await update.message.reply_text("❌ Hubo un error pidiendo el modo especial. Intentá de nuevo con /novia.")
     else:
         # Incorrect answer
         access.record_failed_attempt(user_id)
@@ -2956,15 +3003,12 @@ async def _reject_non_admin(update: Update, command: str) -> bool:
     await update.message.reply_text(ADMIN_ONLY_MESSAGE)
     return True
 
-def _format_girlfriend_chats(chats: List[dict]) -> str:
+def _format_chat_list(title: str, empty: str, chats: List[dict]) -> str:
     if not chats:
-        return "💕 Nadie tiene el modo especial activado."
-
-    lines = ["💕 Modo especial activado en:"]
-    for chat in chats:
-        name = chat['first_name'] or (f"@{chat['username']}" if chat['username'] else "Sin nombre")
-        lines.append(f"• {name} ({chat['chat_id']})")
-    return "\n".join(lines)
+        return empty
+    return "\n".join([title] + [
+        f"• {_chat_label(chat['first_name'], chat['username'], chat['chat_id'])}" for chat in chats
+    ])
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /admin command: admin tools for the users listed in ADMIN_USER_IDS."""
@@ -2973,14 +3017,84 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _reject_non_admin(update, '/admin'):
         return
 
+    pending = _format_chat_list(
+        "⏳ Pedidos del modo especial:", "⏳ No hay pedidos del modo especial.",
+        db.get_pending_girlfriend_requests()
+    )
+    active = _format_chat_list(
+        "💕 Modo especial activado en:", "💕 Nadie tiene el modo especial activado.",
+        db.get_girlfriend_chats()
+    )
     await update.message.reply_text(
         "🔧 Modo administrador\n\n"
         "Comandos:\n"
         "• /subirSorpresa - Subir una foto a la galería secreta\n"
+        "• /aprobarNovia <chat_id> - Aprobar un pedido del modo especial\n"
+        "• /rechazarNovia <chat_id> - Rechazar un pedido\n"
         "• /quitarNovia <chat_id> - Quitarle el modo especial a un chat\n\n"
         f"📸 Fotos en la galería: {db.get_secret_gallery_count()}\n\n"
-        f"{_format_girlfriend_chats(db.get_girlfriend_chats())}"
+        f"{pending}\n\n"
+        f"{active}"
     )
+
+async def _tell_chat(bot, chat_id: int, text: str) -> bool:
+    """Send a message to a chat; False if it cannot be reached."""
+    try:
+        await bot.send_message(chat_id=chat_id, text=text)
+        return True
+    except Exception as error:
+        logger.warning(f"Could not send message to chat {chat_id}: {error}")
+        return False
+
+async def _approve_girlfriend(bot, chat_id: int) -> str:
+    """Approve a request and tell the requester. Returns the result for the admin."""
+    if not db.approve_girlfriend_request(chat_id):
+        return f"El chat {chat_id} no tiene un pedido del modo especial."
+
+    if not await _tell_chat(bot, chat_id, GIRLFRIEND_WELCOME_MESSAGE):
+        return f"✅ Aprobado: el chat {chat_id} ya tiene el modo especial, pero no le pude avisar."
+    return f"✅ Aprobado: el chat {chat_id} ya tiene el modo especial y le avisé."
+
+async def _reject_girlfriend(bot, chat_id: int) -> str:
+    """Reject a pending request and tell the requester. Returns the result for the admin."""
+    if not db.reject_girlfriend_request(chat_id):
+        return f"El chat {chat_id} no tiene un pedido pendiente."
+
+    await _tell_chat(bot, chat_id, GIRLFRIEND_REJECTED_MESSAGE)
+    return (
+        f"❌ Rechazado: el chat {chat_id} no puede volver a pedirlo. "
+        f"Si cambiás de idea, usá /aprobarNovia {chat_id}."
+    )
+
+async def _chat_id_argument(update: Update, context: ContextTypes.DEFAULT_TYPE, command: str) -> Optional[int]:
+    """The single <chat_id> argument of an admin command; replies with the usage if missing."""
+    if len(context.args) == 1 and re.fullmatch(r'-?\d+', context.args[0]):
+        return int(context.args[0])
+
+    await update.message.reply_text(f"Usá {command} <chat_id>. Los chats aparecen en /admin.")
+    return None
+
+async def approve_girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /aprobarNovia <chat_id>: approve a special mode request (admin only)."""
+    register_or_update_user(update)
+
+    if await _reject_non_admin(update, '/aprobarNovia'):
+        return
+
+    chat_id = await _chat_id_argument(update, context, '/aprobarNovia')
+    if chat_id is not None:
+        await update.message.reply_text(await _approve_girlfriend(context.bot, chat_id))
+
+async def reject_girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /rechazarNovia <chat_id>: reject a special mode request (admin only)."""
+    register_or_update_user(update)
+
+    if await _reject_non_admin(update, '/rechazarNovia'):
+        return
+
+    chat_id = await _chat_id_argument(update, context, '/rechazarNovia')
+    if chat_id is not None:
+        await update.message.reply_text(await _reject_girlfriend(context.bot, chat_id))
 
 async def remove_girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /quitarNovia <chat_id>: remove the special mode from a chat (admin only)."""
@@ -2989,17 +3103,45 @@ async def remove_girlfriend_command(update: Update, context: ContextTypes.DEFAUL
     if await _reject_non_admin(update, '/quitarNovia'):
         return
 
-    if len(context.args) != 1 or not re.fullmatch(r'-?\d+', context.args[0]):
-        await update.message.reply_text(
-            "Usá /quitarNovia <chat_id>. Los chats con el modo especial aparecen en /admin."
-        )
+    chat_id = await _chat_id_argument(update, context, '/quitarNovia')
+    if chat_id is None:
         return
 
-    chat_id = int(context.args[0])
     if db.remove_girlfriend_mode(chat_id):
-        await update.message.reply_text(f"✅ Listo, el chat {chat_id} ya no tiene el modo especial.")
+        await update.message.reply_text(
+            f"✅ Listo, el chat {chat_id} ya no tiene el modo especial y no puede volver a pedirlo. "
+            f"Para devolvérselo, usá /aprobarNovia {chat_id}."
+        )
     else:
         await update.message.reply_text(f"El chat {chat_id} no tenía el modo especial activado.")
+
+async def girlfriend_request_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Approve/reject buttons of the request sent to the admins."""
+    query = update.callback_query
+
+    if not access.is_admin(query.from_user):
+        logger.warning(f"User {query.from_user.id} pressed a girlfriend request button without being an admin")
+        await query.answer(ADMIN_ONLY_MESSAGE, show_alert=True)
+        return
+
+    match = re.fullmatch(GIRLFRIEND_REQUEST_BUTTON_PATTERN, query.data or '')
+    if not match:
+        await query.answer()
+        return
+
+    action, chat_id = match.group(1), int(match.group(2))
+    if action == 'approve':
+        result = await _approve_girlfriend(context.bot, chat_id)
+    else:
+        result = await _reject_girlfriend(context.bot, chat_id)
+
+    await query.answer()
+    # Replacing the text also removes the buttons, so the request cannot be answered twice
+    try:
+        await query.edit_message_text(f"{getattr(query.message, 'text', '')}\n\n{result}".strip())
+    except Exception as error:
+        logger.warning(f"Could not edit the girlfriend request message: {error}")
+        await _tell_chat(context.bot, query.from_user.id, result)
 
 async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /subir_sorpresa command - upload photos for secret gallery (admin only)."""

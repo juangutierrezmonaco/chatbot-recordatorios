@@ -1043,25 +1043,89 @@ def get_active_important_reminders() -> List[Dict]:
     return reminders
 
 # Special girlfriend mode functions
-def set_girlfriend_mode(chat_id: int) -> bool:
-    """Activate girlfriend mode for a specific chat_id."""
+# A right answer to /novia leaves a request; an admin approves it (the mode is on) or
+# rejects it (the chat cannot ask again until an admin approves it).
+GIRLFRIEND_REQUEST_PENDING = 'pending'
+GIRLFRIEND_REQUEST_REJECTED = 'rejected'
+
+def _update_user_girlfriend_state(sql: str, params: tuple) -> bool:
+    """Run an UPDATE on users; True if it changed a row."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(sql, params)
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return success
+
+def request_girlfriend_mode(chat_id: int) -> bool:
+    """Leave a pending request. False if the chat has the mode or already has a request."""
+    success = _update_user_girlfriend_state('''
+        UPDATE users
+        SET girlfriend_request = ?, girlfriend_requested_at = ?
+        WHERE chat_id = ? AND is_girlfriend = FALSE AND girlfriend_request IS NULL
+    ''', (GIRLFRIEND_REQUEST_PENDING, datetime.now().isoformat(), chat_id))
+
+    if success:
+        logger.info(f"Girlfriend mode requested by chat {chat_id}")
+    return success
+
+def approve_girlfriend_request(chat_id: int) -> bool:
+    """Turn the mode on for a chat with a pending or rejected request."""
+    success = _update_user_girlfriend_state('''
+        UPDATE users
+        SET is_girlfriend = TRUE, girlfriend_activated_at = ?,
+            girlfriend_request = NULL, girlfriend_requested_at = NULL
+        WHERE chat_id = ? AND girlfriend_request IS NOT NULL
+    ''', (datetime.now().isoformat(), chat_id))
+
+    if success:
+        logger.info(f"Girlfriend mode approved for chat {chat_id}")
+    return success
+
+def reject_girlfriend_request(chat_id: int) -> bool:
+    """Reject a pending request: the chat cannot ask again."""
+    success = _update_user_girlfriend_state('''
+        UPDATE users
+        SET girlfriend_request = ?
+        WHERE chat_id = ? AND girlfriend_request = ?
+    ''', (GIRLFRIEND_REQUEST_REJECTED, chat_id, GIRLFRIEND_REQUEST_PENDING))
+
+    if success:
+        logger.info(f"Girlfriend mode request rejected for chat {chat_id}")
+    return success
+
+def get_girlfriend_request(chat_id: int) -> Optional[str]:
+    """GIRLFRIEND_REQUEST_PENDING, GIRLFRIEND_REQUEST_REJECTED or None."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT girlfriend_request FROM users WHERE chat_id = ?', (chat_id,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    return result[0] if result else None
+
+def get_pending_girlfriend_requests() -> List[Dict]:
+    """Chats waiting for an admin to approve the mode, oldest request first."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        UPDATE users
-        SET is_girlfriend = TRUE, girlfriend_activated_at = ?
-        WHERE chat_id = ?
-    ''', (datetime.now().isoformat(), chat_id))
+        SELECT chat_id, first_name, username, girlfriend_requested_at
+        FROM users
+        WHERE girlfriend_request = ?
+        ORDER BY girlfriend_requested_at
+    ''', (GIRLFRIEND_REQUEST_PENDING,))
 
-    success = cursor.rowcount > 0
-    conn.commit()
+    rows = cursor.fetchall()
     conn.close()
 
-    if success:
-        logger.info(f"Girlfriend mode activated for chat {chat_id}")
-
-    return success
+    return [
+        {'chat_id': row[0], 'first_name': row[1], 'username': row[2], 'requested_at': row[3]}
+        for row in rows
+    ]
 
 def is_girlfriend(chat_id: int) -> bool:
     """Check if chat_id has girlfriend mode activated."""
@@ -1080,23 +1144,18 @@ def is_girlfriend(chat_id: int) -> bool:
     return result is not None
 
 def remove_girlfriend_mode(chat_id: int) -> bool:
-    """Deactivate girlfriend mode for a chat. False if the chat did not have it."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    """Turn the mode off for a chat, which cannot ask again until an admin approves it.
 
-    cursor.execute('''
+    False if the chat did not have the mode.
+    """
+    success = _update_user_girlfriend_state('''
         UPDATE users
-        SET is_girlfriend = FALSE, girlfriend_activated_at = NULL
+        SET is_girlfriend = FALSE, girlfriend_activated_at = NULL, girlfriend_request = ?
         WHERE chat_id = ? AND is_girlfriend = TRUE
-    ''', (chat_id,))
-
-    success = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
+    ''', (GIRLFRIEND_REQUEST_REJECTED, chat_id))
 
     if success:
         logger.info(f"Girlfriend mode removed for chat {chat_id}")
-
     return success
 
 def get_girlfriend_chats() -> List[Dict]:

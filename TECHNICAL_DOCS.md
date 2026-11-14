@@ -724,8 +724,10 @@ explanations = {
 Ningún secreto vive en el repositorio: los dos modos se configuran con variables de entorno (secrets de Fly en producción).
 
 - **Administrador:** los IDs de Telegram de `ADMIN_USER_IDS` (separados por coma). No hay contraseña; para quitarle el acceso a alguien se lo saca de la variable.
-- **Modo especial (`/novia`):** se activa respondiendo la frase de `GIRLFRIEND_PHRASE`, solo en un chat privado. La respuesta tiene que tener todas las palabras de la frase, en cualquier orden y con hasta 3 palabras de más; no importan mayúsculas, tildes ni signos. Después de 5 respuestas incorrectas en una hora, `/novia` deja de preguntar hasta que pase la hora. Sin la variable, el modo no se puede activar.
-- **Quitar el modo especial:** `/admin` lista los chats que lo tienen y `/quitarNovia <chat_id>` se lo quita a uno.
+- **Modo especial (`/novia`):** se pide respondiendo la frase de `GIRLFRIEND_PHRASE`, solo en un chat privado. La respuesta tiene que tener todas las palabras de la frase, en cualquier orden y con hasta 3 palabras de más; no importan mayúsculas, tildes ni signos. Después de 5 respuestas incorrectas en una hora, `/novia` deja de preguntar hasta que pase la hora. Sin la frase o sin administradores, el modo no se puede pedir.
+- **Aprobación:** una respuesta correcta no activa el modo: les llega a los administradores un pedido con botones para aprobar o rechazar (también `/aprobarNovia <chat_id>` y `/rechazarNovia <chat_id>`). Al aprobarlo, el bot le da la bienvenida a quien lo pidió. Un chat rechazado no puede volver a pedirlo hasta que un administrador lo apruebe.
+- **Quitar el modo especial:** `/admin` lista los pedidos pendientes y los chats que lo tienen; `/quitarNovia <chat_id>` se lo quita a uno, que tampoco puede volver a pedirlo.
+- **Estado en la base:** `users.is_girlfriend` y `users.girlfriend_request` (`pending`, `rejected` o vacío).
 
 ### Fortuna Diaria Romántica
 ```python

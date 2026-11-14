@@ -5,7 +5,7 @@ import logging
 import sys
 import asyncio
 from dotenv import load_dotenv
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 from telegram.error import InvalidToken
 import db
 import scheduler
@@ -76,7 +76,13 @@ def main():
         application.add_handler(CommandHandler("fortuna", handlers.fortune_command))
         application.add_handler(CommandHandler("admin", handlers.admin_command))
         application.add_handler(CommandHandler("subirSorpresa", handlers.upload_surprise_command))
+        application.add_handler(CommandHandler("aprobarNovia", handlers.approve_girlfriend_command))
+        application.add_handler(CommandHandler("rechazarNovia", handlers.reject_girlfriend_command))
         application.add_handler(CommandHandler("quitarNovia", handlers.remove_girlfriend_command))
+        application.add_handler(CallbackQueryHandler(
+            handlers.girlfriend_request_button,
+            pattern=handlers.GIRLFRIEND_REQUEST_BUTTON_PATTERN
+        ))
         application.add_handler(CommandHandler("sorpresa", handlers.surprise_command))
         application.add_handler(CommandHandler("exportar", handlers.export_command))
 
@@ -115,7 +121,8 @@ def main():
 
         # Start the bot
         application.run_polling(
-            allowed_updates=['message'],
+            # callback_query: buttons, such as approving a /novia request
+            allowed_updates=['message', 'callback_query'],
             drop_pending_updates=True,
             close_loop=False
         )
