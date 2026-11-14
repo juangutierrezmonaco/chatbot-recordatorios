@@ -7,7 +7,9 @@ import unicodedata
 import pytz
 import dateparser
 from telegram import Update
+from telegram.constants import ChatType
 from telegram.ext import ContextTypes
+import access
 import db
 import scheduler
 from transcription import transcriber
@@ -204,7 +206,7 @@ Manejo tres funcionalidades principales:
 ════════════════════════════
 
 • `/novia` - Activar modo romántico especial
-• `/admin` - Activar modo administrador
+• `/admin` - Herramientas de administrador
 • `/fortuna` - Fortuna diaria romántica
 • `/sorpresa` - Recibir contenido aleatorio
 • `/exportar` - Exportar todos los datos a PDF
@@ -871,11 +873,6 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if we're waiting for girlfriend validation
     if context.user_data.get('pending_girlfriend_validation'):
         await process_girlfriend_validation(update, context)
-        return
-
-    # Check if we're waiting for admin validation
-    if context.user_data.get('pending_admin_validation'):
-        await process_admin_validation(update, context)
         return
 
     # Check if we're waiting for surprise upload (admin photo upload)
@@ -2375,7 +2372,7 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔐 **ESPECIALES Y AUTENTICACIÓN**\n"
             "═══════════════════════════════════════\n"
             "• `novia` - Activar modo romántico\n"
-            "• `admin` - Activar modo administrador\n"
+            "• `admin` - Herramientas de administrador\n"
             "• `fortuna` - Fortuna diaria romántica\n"
             "• `subirSorpresa` - Subir fotos (admin)\n"
             "• `sorpresa` - Recibir contenido aleatorio\n"
@@ -2627,15 +2624,13 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         },
         'admin': {
             'title': '🔧 **Comando /admin**',
-            'description': 'Activa modo administrador con privilegios especiales',
+            'description': 'Herramientas para el administrador del bot',
             'syntax': '`/admin`',
             'examples': ['/admin'],
             'features': [
-                '🔐 Activación con contraseña',
-                '👑 Privilegios de administrador',
-                '📸 Acceso a subir sorpresas',
-                '📊 Información de debug',
-                '⚙️ Comandos administrativos'
+                '🔐 Solo para el administrador del bot',
+                '📸 Subir sorpresas a la galería',
+                '💕 Ver quién tiene el modo especial y quitárselo'
             ]
         },
         'subirSorpresa': {
@@ -2828,6 +2823,22 @@ async def girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
+    # The mode belongs to a person: activated in a group, every member would have it
+    if update.effective_chat.type != ChatType.PRIVATE:
+        await update.message.reply_text("💕 El modo especial se activa en un chat privado conmigo.")
+        return
+
+    if not access.girlfriend_mode_available():
+        logger.warning(f"/novia used but {access.GIRLFRIEND_PHRASE_VARIABLE} is not set")
+        await update.message.reply_text("🔒 El modo especial no está disponible por ahora.")
+        return
+
+    if access.is_locked_out(update.effective_user.id):
+        await update.message.reply_text(
+            "💭 Ya probaste varias veces. Tomate un ratito y volvé a intentar con /novia 💕"
+        )
+        return
+
     # Ask the secret question
     await update.message.reply_text(
         "Para activar el modo especial, necesito que me digas algo...\n\n"
@@ -2838,37 +2849,15 @@ async def girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Mark this chat as pending girlfriend validation
     context.user_data['pending_girlfriend_validation'] = True
 
-def normalize_girlfriend_answer(text: str) -> str:
-    """Normalize text for girlfriend validation - lowercase and remove accents."""
-    if not text:
-        return ""
-
-    # Convert to lowercase
-    normalized = text.lower()
-
-    # Remove accents/diacritics using unicodedata
-    normalized = unicodedata.normalize('NFD', normalized)
-    normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
-
-    return normalized
-
-def validate_girlfriend_answer(text: str) -> bool:
-    """Check if the answer contains the required romantic phrase."""
-    normalized_text = normalize_girlfriend_answer(text)
-
-    # Required words from "oh mi amor estás maravillosa hoy"
-    required_words = ['oh', 'mi', 'amor', 'estas', 'maravillosa', 'hoy']
-
-    # Check if all required words are present (order doesn't matter)
-    return all(word in normalized_text for word in required_words)
-
 async def process_girlfriend_validation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process girlfriend validation answer."""
     chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
     user_text = update.message.text
 
-    if validate_girlfriend_answer(user_text):
+    if access.is_girlfriend_answer(user_text):
         # Correct answer! Activate girlfriend mode
+        access.clear_failed_attempts(user_id)
         success = db.set_girlfriend_mode(chat_id)
 
         if success:
@@ -2884,6 +2873,8 @@ async def process_girlfriend_validation(update: Update, context: ContextTypes.DE
             await update.message.reply_text("❌ Hubo un error activando el modo especial. Intenta de nuevo.")
     else:
         # Incorrect answer
+        access.record_failed_attempt(user_id)
+        logger.info(f"Wrong /novia answer from user {user_id}")
         await update.message.reply_text(
             "💔 Mmm, no es exactamente lo que esperaba...\n\n"
             "💭 Pensá en esa frase que cantamos juntos cuando nos abrazamos 🎵\n\n"
@@ -2900,7 +2891,7 @@ async def fortune_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     # Check if user has girlfriend mode activated OR is admin
-    if not (db.is_girlfriend(chat_id) or db.is_admin(chat_id)):
+    if not (db.is_girlfriend(chat_id) or access.is_admin(update.effective_user)):
         await update.message.reply_text(
             "🔒 Este comando es especial y requiere activación.\n\n"
             "Usá `/novia` para acceder a los comandos románticos 💕"
@@ -2953,69 +2944,62 @@ async def fortune_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🌟 _Con todo mi amor_ 🌟"
     )
 
+ADMIN_ONLY_MESSAGE = "🔒 Este comando es solo para el administrador del bot."
+
+async def _reject_non_admin(update: Update, command: str) -> bool:
+    """Reply and log when the user is not in ADMIN_USER_IDS. True if rejected."""
+    user = update.effective_user
+    if access.is_admin(user):
+        return False
+
+    logger.warning(f"User {user.id if user else None} tried {command} without being an admin")
+    await update.message.reply_text(ADMIN_ONLY_MESSAGE)
+    return True
+
+def _format_girlfriend_chats(chats: List[dict]) -> str:
+    if not chats:
+        return "💕 Nadie tiene el modo especial activado."
+
+    lines = ["💕 Modo especial activado en:"]
+    for chat in chats:
+        name = chat['first_name'] or (f"@{chat['username']}" if chat['username'] else "Sin nombre")
+        lines.append(f"• {name} ({chat['chat_id']})")
+    return "\n".join(lines)
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /admin command to activate admin mode."""
-    # Register or update user
-    user_id = register_or_update_user(update)
-    chat_id = update.effective_chat.id
+    """Handle the /admin command: admin tools for the users listed in ADMIN_USER_IDS."""
+    register_or_update_user(update)
 
-    # Check if already activated
-    if db.is_admin(chat_id):
-        gallery_count = db.get_secret_gallery_count()
-        waiting_upload = context.user_data.get('waiting_for_surprise_upload', False)
+    if await _reject_non_admin(update, '/admin'):
+        return
 
+    await update.message.reply_text(
+        "🔧 Modo administrador\n\n"
+        "Comandos:\n"
+        "• /subirSorpresa - Subir una foto a la galería secreta\n"
+        "• /quitarNovia <chat_id> - Quitarle el modo especial a un chat\n\n"
+        f"📸 Fotos en la galería: {db.get_secret_gallery_count()}\n\n"
+        f"{_format_girlfriend_chats(db.get_girlfriend_chats())}"
+    )
+
+async def remove_girlfriend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /quitarNovia <chat_id>: remove the special mode from a chat (admin only)."""
+    register_or_update_user(update)
+
+    if await _reject_non_admin(update, '/quitarNovia'):
+        return
+
+    if len(context.args) != 1 or not re.fullmatch(r'-?\d+', context.args[0]):
         await update.message.reply_text(
-            "🔧 Ya tenés el modo administrador activado.\n\n"
-            "Comandos de admin disponibles:\n"
-            "• `/subir_sorpresa` - Subir foto para galería secreta\n\n"
-            f"📊 **Estado Debug:**\n"
-            f"• Fotos en galería: {gallery_count}\n"
-            f"• Esperando subida: {'Sí' if waiting_upload else 'No'}\n"
-            f"• Chat ID: {chat_id}"
+            "Usá /quitarNovia <chat_id>. Los chats con el modo especial aparecen en /admin."
         )
         return
 
-    # Ask for admin password
-    await update.message.reply_text(
-        "🔐 **Acceso de Administrador**\n\n"
-        "Ingresá la contraseña de administrador:"
-    )
-
-    # Mark this chat as pending admin validation
-    context.user_data['pending_admin_validation'] = True
-
-def validate_admin_password(password: str) -> bool:
-    """Check if the admin password is correct."""
-    return password.strip() == "admin6143"
-
-async def process_admin_validation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process admin validation password."""
-    chat_id = update.effective_chat.id
-    user_password = update.message.text
-
-    if validate_admin_password(user_password):
-        # Correct password! Activate admin mode
-        success = db.set_admin_mode(chat_id)
-
-        if success:
-            await update.message.reply_text(
-                "🔧✅ **Modo Administrador Activado** ✅🔧\n\n"
-                "🎛️ Comandos de administrador disponibles:\n"
-                "• `/subir_sorpresa` - Subir foto/meme para galería secreta\n"
-                "• Más comandos de admin próximamente...\n\n"
-                "🔒 Acceso total concedido"
-            )
-        else:
-            await update.message.reply_text("❌ Error activando el modo administrador. Intenta de nuevo.")
+    chat_id = int(context.args[0])
+    if db.remove_girlfriend_mode(chat_id):
+        await update.message.reply_text(f"✅ Listo, el chat {chat_id} ya no tiene el modo especial.")
     else:
-        # Incorrect password
-        await update.message.reply_text(
-            "❌ **Contraseña incorrecta**\n\n"
-            "🔒 Acceso denegado. Intenta nuevamente con `/admin`"
-        )
-
-    # Clear the validation flag
-    context.user_data.pop('pending_admin_validation', None)
+        await update.message.reply_text(f"El chat {chat_id} no tenía el modo especial activado.")
 
 async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /subir_sorpresa command - upload photos for secret gallery (admin only)."""
@@ -3025,13 +3009,7 @@ async def upload_surprise_command(update: Update, context: ContextTypes.DEFAULT_
 
     logger.info(f"Upload surprise command called by chat_id: {chat_id}")
 
-    # Check if user has admin mode activated
-    if not db.is_admin(chat_id):
-        logger.warning(f"Non-admin user {chat_id} tried to use upload surprise command")
-        await update.message.reply_text(
-            "🔒 Este comando requiere privilegios de administrador.\n\n"
-            "Usá `/admin` para acceder a los comandos de administración 🔧"
-        )
+    if await _reject_non_admin(update, '/subirSorpresa'):
         return
 
     gallery_count = db.get_secret_gallery_count()
@@ -3055,7 +3033,7 @@ async def surprise_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     # Check if user has girlfriend mode activated OR is admin
-    if not (db.is_girlfriend(chat_id) or db.is_admin(chat_id)):
+    if not (db.is_girlfriend(chat_id) or access.is_admin(update.effective_user)):
         await update.message.reply_text(
             "🔒 Este comando es especial y requiere activación.\n\n"
             "Usá `/novia` para acceder a los comandos románticos 💕"
@@ -3156,7 +3134,7 @@ async def handle_surprise_upload(update: Update, context: ContextTypes.DEFAULT_T
         return False  # Not handling this message
 
     # Check admin privileges
-    if not db.is_admin(chat_id):
+    if not access.is_admin(update.effective_user):
         logger.warning(f"Non-admin user {chat_id} tried to upload surprise")
         context.user_data.pop('waiting_for_surprise_upload', None)
         return False

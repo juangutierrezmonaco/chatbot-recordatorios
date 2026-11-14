@@ -49,7 +49,16 @@ fly secrets set TELEGRAM_TOKEN="tu_token_de_telegram_aqui"
 
 # OpenAI API Key (OPCIONAL - solo para mensajes de voz)
 fly secrets set OPENAI_API_KEY="tu_openai_key_aqui"
+
+# Modos especiales (OPCIONALES). --stage los guarda sin reiniciar el bot:
+# se aplican en el próximo deploy
+fly secrets set --stage ADMIN_USER_IDS="tu_id_de_telegram" GIRLFRIEND_PHRASE="la frase de /novia"
 ```
+
+- `ADMIN_USER_IDS`: IDs de Telegram (separados por coma) que pueden usar `/admin`, `/subirSorpresa` y `/quitarNovia`. Sin la variable, nadie es administrador.
+- `GIRLFRIEND_PHRASE`: la respuesta a la pregunta de `/novia`. Sin la variable, el modo especial no se puede activar.
+
+Nunca escribas estos valores en el código ni en la documentación: el repositorio es público.
 
 ## 6. Deploy inicial
 
