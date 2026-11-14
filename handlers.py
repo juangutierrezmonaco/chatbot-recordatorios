@@ -11,6 +11,7 @@ from telegram.constants import ChatType
 from telegram.ext import ContextTypes
 import access
 import db
+from formatting import escape, from_markdown, highlight, reply_html
 import scheduler
 from transcription import transcriber
 from pdf_exporter import PDFExporter, cleanup_temp_file
@@ -253,7 +254,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📝 No tienes recordatorios activos.")
         return
 
-    message = "📋 **Tus recordatorios activos:**\n\n"
+    message = "📋 <b>Tus recordatorios activos:</b>\n\n"
 
     for reminder in reminders:
         formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
@@ -266,10 +267,10 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             emoji = "🔔"
             repeat_info = ""
 
-        message += f"{emoji} **#{reminder['id']}** - {formatted_date}{repeat_info}\n"
-        message += f"   {reminder['text']}\n\n"
+        message += f"{emoji} <b>#{reminder['id']}</b> - {formatted_date}{repeat_info}\n"
+        message += f"   {escape(reminder['text'])}\n\n"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await reply_html(update.message, message)
 
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /hoy command."""
@@ -280,7 +281,7 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📅 No tienes recordatorios para hoy.")
         return
 
-    message = "📅 **Tus recordatorios para hoy:**\n\n"
+    message = "📅 <b>Tus recordatorios para hoy:</b>\n\n"
 
     for reminder in reminders:
         # Show only time for today's reminders (not date)
@@ -294,10 +295,10 @@ async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status_emoji = "🔔"
             status_text = ""
 
-        message += f"{status_emoji} **#{reminder['id']}** - {formatted_time} {status_text}\n"
-        message += f"   {reminder['text']}\n\n"
+        message += f"{status_emoji} <b>#{reminder['id']}</b> - {formatted_time} {status_text}\n"
+        message += f"   {escape(reminder['text'])}\n\n"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await reply_html(update.message, message)
 
 async def tomorrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /manana command: show tomorrow's pending reminders."""
@@ -355,9 +356,9 @@ async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Set message header based on what we're showing
     if include_sent:
-        message = "📅 **Tus recordatorios de esta semana (todos):**\n\n"
+        message = "📅 <b>Tus recordatorios de esta semana (todos):</b>\n\n"
     else:
-        message = "📅 **Tus recordatorios pendientes de esta semana:**\n\n"
+        message = "📅 <b>Tus recordatorios pendientes de esta semana:</b>\n\n"
 
     # Get start of week (Monday)
     days_since_monday = now.weekday()
@@ -374,9 +375,9 @@ async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Check if it's today
         if current_date == now.date():
-            day_header = f"**{day_name} {formatted_date} (HOY)**"
+            day_header = f"<b>{day_name} {formatted_date} (HOY)</b>"
         else:
-            day_header = f"**{day_name} {formatted_date}**"
+            day_header = f"<b>{day_name} {formatted_date}</b>"
 
         # Get reminders for this day
         day_reminders = days_reminders.get(current_date, [])
@@ -394,16 +395,16 @@ async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     status_emoji = "🔔"
                     status_text = ""
 
-                message += f"  {status_emoji} **#{reminder['id']}** - {formatted_time} {status_text}\n"
-                message += f"     {reminder['text']}\n"
+                message += f"  {status_emoji} <b>#{reminder['id']}</b> - {formatted_time} {status_text}\n"
+                message += f"     {escape(reminder['text'])}\n"
             message += "\n"
         else:
             # Only show empty days if they haven't passed yet or are today
             if current_date >= now.date():
                 message += f"{day_header}\n"
-                message += f"  _Sin recordatorios_\n\n"
+                message += f"  <i>Sin recordatorios</i>\n\n"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await reply_html(update.message, message)
 
 def parse_search_query(query: str) -> Tuple[str, bool]:
     """Parse search query to detect category search.
@@ -462,23 +463,23 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if is_category:
-        message = f"🔍 **Recordatorios de categoría \"{search_term}\":**\n\n"
+        message = f"🔍 <b>Recordatorios de categoría \"{escape(search_term)}\":</b>\n\n"
     else:
-        message = f"🔍 **Recordatorios encontrados con \"{search_term}\":**\n\n"
+        message = f"🔍 <b>Recordatorios encontrados con \"{escape(search_term)}\":</b>\n\n"
 
     for reminder in reminders:
         formatted_date = reminder['datetime'].strftime("%d/%m/%Y %H:%M")
 
-        # Highlight the keyword in the text (simple bold formatting) - only for text search
+        # Highlight the keyword in the text - only for text search
         if is_category:
-            highlighted_text = reminder['text']
+            highlighted_text = escape(reminder['text'])
         else:
-            highlighted_text = _highlight_keyword(reminder['text'], search_term)
+            highlighted_text = highlight(reminder['text'], search_term)
 
-        message += f"🔔 **#{reminder['id']}** - {formatted_date}\n"
+        message += f"🔔 <b>#{reminder['id']}</b> - {formatted_date}\n"
         message += f"   {highlighted_text}\n\n"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await reply_html(update.message, message)
 
 async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /dia command."""
@@ -538,8 +539,8 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📅 No tienes recordatorios para el {weekday} {formatted_date} {past_indicator}.")
         return
 
-    past_indicator = "📋 **Historial completo** - " if is_past_date else ""
-    message = f"📅 {past_indicator}**Recordatorios para {weekday} {formatted_date}:**\n\n"
+    past_indicator = "📋 <b>Historial completo</b> - " if is_past_date else ""
+    message = f"📅 {past_indicator}<b>Recordatorios para {weekday} {formatted_date}:</b>\n\n"
 
     for reminder in reminders:
         # Show only time for same-day reminders
@@ -561,8 +562,8 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Important indicator
         important_indicator = '🔥 ' if reminder.get('is_important') else ''
 
-        message += f"{status_emoji} {important_indicator}**#{reminder['id']}** - {formatted_time}\n"
-        message += f"   {reminder['text']}\n"
+        message += f"{status_emoji} {important_indicator}<b>#{reminder['id']}</b> - {formatted_time}\n"
+        message += f"   {escape(reminder['text'])}\n"
 
         # Show status for past dates
         if is_past_date and 'status' in reminder and reminder['status'] != 'active':
@@ -573,11 +574,11 @@ async def date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'failed': '(No se pudo enviar)'
             }.get(reminder['status'], '')
             if status_text:
-                message += f"   _{status_text}_\n"
+                message += f"   <i>{status_text}</i>\n"
 
         message += "\n"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await reply_html(update.message, message)
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /historial command."""
@@ -620,13 +621,13 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Build header message
     if status_filter == 'sent':
-        header = "📜 **Recordatorios enviados:**"
+        header = "📜 <b>Recordatorios enviados:</b>"
     elif status_filter == 'cancelled':
-        header = "📜 **Recordatorios cancelados:**"
+        header = "📜 <b>Recordatorios cancelados:</b>"
     elif status_filter == 'failed':
-        header = "📜 **Recordatorios que no se pudieron enviar:**"
+        header = "📜 <b>Recordatorios que no se pudieron enviar:</b>"
     else:
-        header = "📜 **Historial de recordatorios:**"
+        header = "📜 <b>Historial de recordatorios:</b>"
 
     message = f"{header}\n\n"
 
@@ -647,11 +648,11 @@ async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status_emoji = "❓"
             status_text = reminder['status']
 
-        message += f"{status_emoji} **#{reminder['id']}** - {formatted_date} ({status_text})\n"
-        message += f"   {reminder['text']}\n\n"
+        message += f"{status_emoji} <b>#{reminder['id']}</b> - {formatted_date} ({status_text})\n"
+        message += f"   {escape(reminder['text'])}\n\n"
 
-    message += f"_(Mostrando últimos {len(reminders)} recordatorios)_"
-    await update.message.reply_text(message, parse_mode='Markdown')
+    message += f"<i>(Mostrando últimos {len(reminders)} recordatorios)</i>"
+    await reply_html(update.message, message)
 
 async def vault_history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /historialBitacora command."""
@@ -662,17 +663,17 @@ async def vault_history_command(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("📖 No hay entradas eliminadas en el historial de la bitácora")
         return
 
-    message = f"🗂️ **Historial de bitácora (eliminadas):**\n\n"
+    message = f"🗂️ <b>Historial de bitácora (eliminadas):</b>\n\n"
 
     for entry in entries:
         created_date = entry['created_at'].strftime("%d/%m/%Y")
         deleted_date = entry['deleted_at'].strftime("%d/%m/%Y") if entry['deleted_at'] else "N/A"
 
-        message += f"🗑️ **#{entry['id']}** - Creada: {created_date} | Eliminada: {deleted_date} [#{entry['category']}]\n"
-        message += f"   {entry['text']}\n\n"
+        message += f"🗑️ <b>#{entry['id']}</b> - Creada: {created_date} | Eliminada: {deleted_date} [#{escape(entry['category'])}]\n"
+        message += f"   {escape(entry['text'])}\n\n"
 
-    message += f"_(Mostrando últimas {len(entries)} entradas eliminadas)_"
-    await update.message.reply_text(message, parse_mode='Markdown')
+    message += f"<i>(Mostrando últimas {len(entries)} entradas eliminadas)</i>"
+    await reply_html(update.message, message)
 
 async def vault_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /bitacora command."""
@@ -710,15 +711,15 @@ async def vault_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("📖 Tu bitácora está vacía.")
         return
 
-    message = "📖 **Tu bitácora:**\n\n"
+    message = "📖 <b>Tu bitácora:</b>\n\n"
 
     for entry in entries:
         formatted_date = entry['created_at'].strftime("%d/%m/%Y")
-        message += f"📝 **#{entry['id']}** - {formatted_date}\n"
-        message += f"   {entry['text']}\n\n"
+        message += f"📝 <b>#{entry['id']}</b> - {formatted_date}\n"
+        message += f"   {escape(entry['text'])}\n\n"
 
-    message += f"_(Total: {len(entries)} entradas)_"
-    await update.message.reply_text(message, parse_mode='Markdown')
+    message += f"<i>(Total: {len(entries)} entradas)</i>"
+    await reply_html(update.message, message)
 
 async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /buscar bitacora command."""
@@ -758,23 +759,23 @@ async def vault_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if is_category:
-        message = f"🔍 **Bitácora - Categoría \"{search_term}\":**\n\n"
+        message = f"🔍 <b>Bitácora - Categoría \"{escape(search_term)}\":</b>\n\n"
     else:
-        message = f"🔍 **Bitácora - Entradas encontradas con \"{search_term}\":**\n\n"
+        message = f"🔍 <b>Bitácora - Entradas encontradas con \"{escape(search_term)}\":</b>\n\n"
 
     for entry in entries:
         formatted_date = entry['created_at'].strftime("%d/%m/%Y")
 
         # Highlight the keyword in the text - only for text search
         if is_category:
-            highlighted_text = entry['text']
+            highlighted_text = escape(entry['text'])
         else:
-            highlighted_text = _highlight_keyword(entry['text'], search_term)
+            highlighted_text = highlight(entry['text'], search_term)
 
-        message += f"📝 **#{entry['id']}** - {formatted_date}\n"
+        message += f"📝 <b>#{entry['id']}</b> - {formatted_date}\n"
         message += f"   {highlighted_text}\n\n"
 
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await reply_html(update.message, message)
 
 async def vault_delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /borrarBitacora command."""
@@ -941,16 +942,16 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"🤔 No encontré información sobre: {terms_str}")
                 return
 
-            message = f"🔍 **Esto es lo que sé sobre tu consulta:**\n\n"
+            message = f"🔍 <b>Esto es lo que sé sobre tu consulta:</b>\n\n"
 
             for entry in entries[:5]:  # Limit to top 5 results
                 formatted_date = entry['created_at'].strftime("%d/%m/%Y")
                 score_emoji = "🎯" if entry['score'] >= 2 else "📝"
 
-                message += f"{score_emoji} **#{entry['id']}** - {formatted_date}\n"
-                message += f"   {entry['text']}\n\n"
+                message += f"{score_emoji} <b>#{entry['id']}</b> - {formatted_date}\n"
+                message += f"   {escape(entry['text'])}\n\n"
 
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await reply_html(update.message, message)
         else:
             await update.message.reply_text("🤔 No pude entender tu pregunta. Intenta ser más específico.")
         return
@@ -991,35 +992,35 @@ async def free_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             if is_category:
-                message = f"🔍 **Bitácora - Categoría \"{search_term}\":**\n\n"
+                message = f"🔍 <b>Bitácora - Categoría \"{escape(search_term)}\":</b>\n\n"
             elif len(search_terms) > 1:
-                message = f"🔍 **Bitácora - Búsqueda con {search_type}:**\n\n"
+                message = f"🔍 <b>Bitácora - Búsqueda con {escape(search_type)}:</b>\n\n"
             else:
-                message = f"🔍 **Bitácora - Búsqueda \"{search_term}\":**\n\n"
+                message = f"🔍 <b>Bitácora - Búsqueda \"{escape(search_term)}\":</b>\n\n"
 
             for entry in entries:
                 formatted_date = entry['created_at'].strftime("%d/%m/%Y")
 
                 # Highlight the keyword in the text - only for text search
                 if is_category:
-                    highlighted_text = entry['text']
+                    highlighted_text = escape(entry['text'])
                     entry_emoji = "📝"
                 elif len(search_terms) > 1:
                     # For multiple terms, show the text as-is (highlighting multiple terms is complex)
-                    highlighted_text = entry['text']
+                    highlighted_text = escape(entry['text'])
                     # Use score emoji instead of default 📝 if available
                     if 'score' in entry:
                         entry_emoji = "🎯" if entry['score'] >= 2 else "📝"
                     else:
                         entry_emoji = "📝"
                 else:
-                    highlighted_text = _highlight_keyword(entry['text'], search_term)
+                    highlighted_text = highlight(entry['text'], search_term)
                     entry_emoji = "📝"
 
-                message += f"{entry_emoji} **#{entry['id']}** - {formatted_date}\n"
+                message += f"{entry_emoji} <b>#{entry['id']}</b> - {formatted_date}\n"
                 message += f"   {highlighted_text}\n\n"
 
-            await update.message.reply_text(message, parse_mode='Markdown')
+            await reply_html(update.message, message)
         else:
             await update.message.reply_text(
                 "❌ Especifica qué averiguar.\n"
@@ -1808,23 +1809,6 @@ def _parse_reminder_ids(text: str) -> list:
 
     return reminder_ids
 
-def _highlight_keyword(text: str, keyword: str) -> str:
-    """Highlight keyword in text using markdown bold formatting."""
-    # Case-insensitive replacement
-    import re
-    pattern = re.compile(re.escape(keyword), re.IGNORECASE)
-
-    def replace_func(match):
-        return f"**{match.group()}**"
-
-    # Only highlight if the keyword isn't already part of markdown formatting
-    # Simple approach: avoid double-formatting
-    if "**" in text:
-        # If text already has markdown, don't highlight to avoid conflicts
-        return text
-
-    return pattern.sub(replace_func, text)
-
 def _parse_date_only_with_past(text: str) -> datetime:
     """Parse a date string without extracting reminder text, allowing past dates."""
     import pytz
@@ -2109,14 +2093,13 @@ async def important_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = register_or_update_user(update)
 
     if not context.args:
-        await update.message.reply_text(
+        await reply_html(update.message, from_markdown(
             "❌ Formato incorrecto.\n\n"
             "**Ejemplos:**\n"
             "• `/importante 10 mañana 9:00 ir al médico` (cada 10 min)\n"
             "• `/importante 5 en 2h llamar a Juan` (cada 5 min)\n"
-            "• `/importante lunes 10:00 reunión` (cada 5 min por defecto)",
-            parse_mode='Markdown'
-        )
+            "• `/importante lunes 10:00 reunión` (cada 5 min por defecto)"
+        ))
         return
 
     # Parse arguments
@@ -2192,22 +2175,23 @@ async def process_important_reminder(update: Update, context: ContextTypes.DEFAU
         # Schedule the reminder
         scheduler.schedule_important_reminder(reminder_id, parsed_date, repeat_interval, context.bot)
 
-        # Format response
-        formatted_time = parsed_date.strftime('%d/%m/%Y %H:%M')
-        await update.message.reply_text(
-            f"🔥 **Recordatorio importante creado:**\n"
-            f"📅 **Fecha:** {formatted_time}\n"
-            f"🔔 **Texto:** {remaining_text}\n"
-            f"⏰ **Se repetirá cada:** {repeat_interval} minutos\n"
-            f"🆔 **ID:** #{reminder_id}\n"
-            f"📂 **Categoría:** #{category}\n\n"
-            f"💡 Usa `/completar {reminder_id}` para detener la repetición.",
-            parse_mode='Markdown'
-        )
-
     except Exception as e:
         logger.error(f"Error processing important reminder: {e}")
         await update.message.reply_text("❌ Error procesando el recordatorio importante. Intenta nuevamente.")
+        return
+
+    # Outside the try: once the reminder exists, a failed confirmation must not read as an error
+    formatted_time = parsed_date.strftime('%d/%m/%Y %H:%M')
+    await update.message.reply_text(
+        f"🔥 <b>Recordatorio importante creado:</b>\n"
+        f"📅 <b>Fecha:</b> {formatted_time}\n"
+        f"🔔 <b>Texto:</b> {escape(remaining_text)}\n"
+        f"⏰ <b>Se repetirá cada:</b> {repeat_interval} minutos\n"
+        f"🆔 <b>ID:</b> #{reminder_id}\n"
+        f"📂 <b>Categoría:</b> #{escape(category)}\n\n"
+        f"💡 Usá <code>/completar {reminder_id}</code> para detener la repetición.",
+        parse_mode='HTML'
+    )
 
 async def complete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /completar command to stop important reminder repetition."""
@@ -2216,11 +2200,10 @@ async def complete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     if not context.args:
-        await update.message.reply_text(
+        await reply_html(update.message, from_markdown(
             "❌ Debes especificar el ID del recordatorio.\n\n"
-            "**Ejemplo:** `/completar 123`",
-            parse_mode='Markdown'
-        )
+            "**Ejemplo:** `/completar 123`"
+        ))
         return
 
     try:
@@ -2821,7 +2804,7 @@ async def explain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"**Características:**\n{features_text}"
         )
 
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await reply_html(update.message, from_markdown(message))
     else:
         await update.message.reply_text(
             f"❌ No conozco el comando `{command}`\n\n"
@@ -3470,7 +3453,7 @@ async def voice_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         # Show what was transcribed
-        await update.message.reply_text(f"🎙️ **Transcribí:** \"{transcribed_text}\"", parse_mode='Markdown')
+        await update.message.reply_text(f"🎙️ <b>Transcribí:</b> \"{escape(transcribed_text)}\"", parse_mode='HTML')
 
         # Process the transcribed text as a normal message
         # Check if it's a reminder or vault entry
