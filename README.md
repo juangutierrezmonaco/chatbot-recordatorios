@@ -118,7 +118,7 @@ python3 bot.py
 ### 💕 **Funciones Especiales:**
 - `/novia` - Modo romántico con validación
 - `/fortuna` - Fortuna diaria romántica
-- `/admin` - Modo administrador
+- `/admin` - Herramientas del administrador (IDs de `ADMIN_USER_IDS`)
 - `/subirSorpresa` - Subir fotos (admin)
 - `/sorpresa` - Recibir sorpresas aleatorias
 - `/explicar <comando>` - Ayuda detallada
@@ -192,6 +192,10 @@ Configurado para Argentina (America/Argentina/Buenos_Aires). Puedes cambiar la z
 ### Variables de entorno:
 
 - `TELEGRAM_TOKEN` (requerida): Token del bot de Telegram
+- `ADMIN_USER_IDS` (opcional): IDs de Telegram de los administradores, separados por coma
+- `GIRLFRIEND_PHRASE` (opcional): respuesta que activa el modo especial de `/novia`
+
+Los valores de los modos especiales nunca van en el código: el repositorio es público.
 
 **📁 Archivo .env:**
 El proyecto incluye un archivo `.env` con las variables configuradas. Este archivo contiene información sensible y está excluido del control de versiones por seguridad.

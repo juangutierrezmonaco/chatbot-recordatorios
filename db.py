@@ -1079,41 +1079,45 @@ def is_girlfriend(chat_id: int) -> bool:
 
     return result is not None
 
-def set_admin_mode(chat_id: int) -> bool:
-    """Activate admin mode for a specific chat_id."""
+def remove_girlfriend_mode(chat_id: int) -> bool:
+    """Deactivate girlfriend mode for a chat. False if the chat did not have it."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
         UPDATE users
-        SET is_admin = TRUE, admin_activated_at = ?
-        WHERE chat_id = ?
-    ''', (datetime.now().isoformat(), chat_id))
+        SET is_girlfriend = FALSE, girlfriend_activated_at = NULL
+        WHERE chat_id = ? AND is_girlfriend = TRUE
+    ''', (chat_id,))
 
     success = cursor.rowcount > 0
     conn.commit()
     conn.close()
 
     if success:
-        logger.info(f"Admin mode activated for chat {chat_id}")
+        logger.info(f"Girlfriend mode removed for chat {chat_id}")
 
     return success
 
-def is_admin(chat_id: int) -> bool:
-    """Check if chat_id has admin mode activated."""
+def get_girlfriend_chats() -> List[Dict]:
+    """Chats with girlfriend mode activated, oldest activation first."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT is_admin
+        SELECT chat_id, first_name, username, girlfriend_activated_at
         FROM users
-        WHERE chat_id = ? AND is_admin = TRUE
-    ''', (chat_id,))
+        WHERE is_girlfriend = TRUE
+        ORDER BY girlfriend_activated_at
+    ''')
 
-    result = cursor.fetchone()
+    rows = cursor.fetchall()
     conn.close()
 
-    return result is not None
+    return [
+        {'chat_id': row[0], 'first_name': row[1], 'username': row[2], 'activated_at': row[3]}
+        for row in rows
+    ]
 
 # Secret gallery functions
 def add_secret_photo(local_file_path: str, file_type: str, uploaded_by: int, original_filename: str = None, description: str = None) -> int:

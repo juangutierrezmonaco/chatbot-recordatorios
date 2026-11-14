@@ -720,18 +720,12 @@ explanations = {
 
 ## 🎮 Funcionalidades Románticas
 
-### Sistema de Validación de Novia
-Funcionalidades especiales activadas mediante frases románticas.
+### Acceso a los modos especiales (`access.py`)
+Ningún secreto vive en el repositorio: los dos modos se configuran con variables de entorno (secrets de Fly en producción).
 
-#### Comando `/novia`
-```python
-def validate_girlfriend_phrase(user_phrase: str) -> bool:
-    target_phrases = [
-        "sos lo más lindo de mi vida",
-        "te amo tanto mi amor"
-    ]
-    # Comparación inteligente ignorando tildes, mayúsculas y signos
-```
+- **Administrador:** los IDs de Telegram de `ADMIN_USER_IDS` (separados por coma). No hay contraseña; para quitarle el acceso a alguien se lo saca de la variable.
+- **Modo especial (`/novia`):** se activa respondiendo la frase de `GIRLFRIEND_PHRASE`, solo en un chat privado. La respuesta tiene que tener todas las palabras de la frase, en cualquier orden y con hasta 3 palabras de más; no importan mayúsculas, tildes ni signos. Después de 5 respuestas incorrectas en una hora, `/novia` deja de preguntar hasta que pase la hora. Sin la variable, el modo no se puede activar.
+- **Quitar el modo especial:** `/admin` lista los chats que lo tienen y `/quitarNovia <chat_id>` se lo quita a uno.
 
 ### Fortuna Diaria Romántica
 ```python
@@ -762,7 +756,7 @@ CREATE TABLE secret_gallery (
 ```
 
 #### Comandos de Galería
-- `/admin` - Activación de modo administrador (password: admin6143)
+- `/admin` - Herramientas del administrador (solo `ADMIN_USER_IDS`)
 - `/subirSorpresa` - Subida de archivos por admin (pascalCase)
 - `/sorpresa` - Envío aleatorio para novia activada
 

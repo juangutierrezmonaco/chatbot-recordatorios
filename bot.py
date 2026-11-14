@@ -76,6 +76,7 @@ def main():
         application.add_handler(CommandHandler("fortuna", handlers.fortune_command))
         application.add_handler(CommandHandler("admin", handlers.admin_command))
         application.add_handler(CommandHandler("subirSorpresa", handlers.upload_surprise_command))
+        application.add_handler(CommandHandler("quitarNovia", handlers.remove_girlfriend_command))
         application.add_handler(CommandHandler("sorpresa", handlers.surprise_command))
         application.add_handler(CommandHandler("exportar", handlers.export_command))
 
