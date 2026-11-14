@@ -79,6 +79,16 @@ class GirlfriendAnswer(unittest.TestCase):
             self.assertFalse(access.is_girlfriend_answer('cualquier cosa'))
         self.assertFalse(self.is_answer('', phrase=' ¡! '))
 
+    def test_the_mode_needs_the_phrase_and_an_admin_to_approve(self):
+        phrase = {access.GIRLFRIEND_PHRASE_VARIABLE: self.PHRASE}
+        admins = {access.ADMIN_USER_IDS_VARIABLE: '111'}
+        with mock.patch.dict(os.environ, {**phrase, **admins}, clear=True):
+            self.assertTrue(access.girlfriend_mode_available())
+        with mock.patch.dict(os.environ, phrase, clear=True):
+            self.assertFalse(access.girlfriend_mode_available())
+        with mock.patch.dict(os.environ, admins, clear=True):
+            self.assertFalse(access.girlfriend_mode_available())
+
     def test_empty_message(self):
         self.assertFalse(self.is_answer(None))
 
@@ -117,7 +127,7 @@ class FailedAttempts(unittest.TestCase):
         self.assertFalse(access.is_locked_out(self.USER + 1, now=1000))
 
 
-class GirlfriendChats(unittest.TestCase):
+class GirlfriendRequests(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.original_db_path = db.DB_PATH
@@ -140,35 +150,86 @@ class GirlfriendChats(unittest.TestCase):
                     copy.write(source.read())
             MigrationManager(db.DB_PATH, migrations_dir=partial_dir).run_migrations()
 
-    def test_list_and_remove(self):
+    def chat_ids(self, chats):
+        return [chat['chat_id'] for chat in chats]
+
+    def test_a_request_waits_for_an_admin(self):
+        self.migrate()
+        db.create_or_update_user(1, first_name='Ana')
+
+        self.assertIsNone(db.get_girlfriend_request(1))
+        self.assertTrue(db.request_girlfriend_mode(1))
+        self.assertEqual(db.get_girlfriend_request(1), db.GIRLFRIEND_REQUEST_PENDING)
+        self.assertFalse(db.is_girlfriend(1))
+        self.assertFalse(db.request_girlfriend_mode(1), 'already pending')
+
+        pending = db.get_pending_girlfriend_requests()
+        self.assertEqual(self.chat_ids(pending), [1])
+        self.assertEqual(pending[0]['first_name'], 'Ana')
+
+    def test_approving_turns_the_mode_on(self):
+        self.migrate()
+        db.create_or_update_user(1, first_name='Ana')
+        db.request_girlfriend_mode(1)
+
+        self.assertTrue(db.approve_girlfriend_request(1))
+        self.assertTrue(db.is_girlfriend(1))
+        self.assertIsNone(db.get_girlfriend_request(1))
+        self.assertEqual(db.get_pending_girlfriend_requests(), [])
+        self.assertEqual(self.chat_ids(db.get_girlfriend_chats()), [1])
+        self.assertFalse(db.request_girlfriend_mode(1), 'already has the mode')
+
+    def test_a_chat_without_a_request_cannot_be_approved(self):
+        self.migrate()
+        db.create_or_update_user(1, first_name='Ana')
+        self.assertFalse(db.approve_girlfriend_request(1))
+        self.assertFalse(db.approve_girlfriend_request(999))
+        self.assertFalse(db.is_girlfriend(1))
+
+    def test_a_rejected_chat_cannot_ask_again_until_approved(self):
+        self.migrate()
+        db.create_or_update_user(1, first_name='Ana')
+        db.request_girlfriend_mode(1)
+
+        self.assertTrue(db.reject_girlfriend_request(1))
+        self.assertEqual(db.get_girlfriend_request(1), db.GIRLFRIEND_REQUEST_REJECTED)
+        self.assertFalse(db.reject_girlfriend_request(1), 'no longer pending')
+        self.assertFalse(db.request_girlfriend_mode(1))
+        self.assertEqual(db.get_pending_girlfriend_requests(), [])
+
+        self.assertTrue(db.approve_girlfriend_request(1), 'an admin can change their mind')
+        self.assertTrue(db.is_girlfriend(1))
+
+    def test_removing_the_mode_blocks_new_requests(self):
         self.migrate()
         db.create_or_update_user(1, first_name='Ana')
         db.create_or_update_user(2, username='otro')
-        db.create_or_update_user(3, first_name='Sin modo')
-        db.set_girlfriend_mode(1)
-        db.set_girlfriend_mode(2)
-
-        chats = db.get_girlfriend_chats()
-        self.assertEqual([chat['chat_id'] for chat in chats], [1, 2])
-        self.assertEqual(chats[0]['first_name'], 'Ana')
-        self.assertEqual(chats[1]['username'], 'otro')
+        for chat_id in (1, 2):
+            db.request_girlfriend_mode(chat_id)
+            db.approve_girlfriend_request(chat_id)
+        self.assertEqual(self.chat_ids(db.get_girlfriend_chats()), [1, 2])
+        self.assertEqual(db.get_girlfriend_chats()[1]['username'], 'otro')
 
         self.assertTrue(db.remove_girlfriend_mode(1))
         self.assertFalse(db.is_girlfriend(1))
         self.assertFalse(db.remove_girlfriend_mode(1))
-        self.assertFalse(db.remove_girlfriend_mode(3))
-        self.assertEqual([chat['chat_id'] for chat in db.get_girlfriend_chats()], [2])
+        self.assertEqual(self.chat_ids(db.get_girlfriend_chats()), [2])
+        self.assertFalse(db.request_girlfriend_mode(1))
+        self.assertEqual(db.get_girlfriend_request(1), db.GIRLFRIEND_REQUEST_REJECTED)
 
     def test_migration_12_clears_the_modes_activated_with_the_old_values(self):
         self.migrate(up_to=11)
         db.create_or_update_user(1, first_name='Dueño')
-        db.set_girlfriend_mode(1)
         with sqlite3.connect(db.DB_PATH) as conn:
-            conn.execute("UPDATE users SET is_admin = TRUE, admin_activated_at = '2025-09-23' WHERE chat_id = 1")
+            conn.execute(
+                "UPDATE users SET is_admin = TRUE, admin_activated_at = '2025-09-23', "
+                "is_girlfriend = TRUE, girlfriend_activated_at = '2025-09-23' WHERE chat_id = 1"
+            )
 
         self.migrate()
 
         self.assertFalse(db.is_girlfriend(1))
+        self.assertIsNone(db.get_girlfriend_request(1))
         with sqlite3.connect(db.DB_PATH) as conn:
             row = conn.execute(
                 "SELECT is_admin, admin_activated_at, girlfriend_activated_at FROM users WHERE chat_id = 1"

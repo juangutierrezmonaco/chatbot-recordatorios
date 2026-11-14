@@ -4,8 +4,8 @@ Both are configured with environment variables (Fly secrets in production), neve
 repository:
 - ADMIN_USER_IDS: comma separated Telegram user ids. There is no admin password to guess
   or leak, and removing an id revokes the access.
-- GIRLFRIEND_PHRASE: the answer to the /novia question. Without it the mode cannot be
-  activated.
+- GIRLFRIEND_PHRASE: the answer to the /novia question. A right answer sends the admins a
+  request to approve; without the phrase or without admins the mode cannot be requested.
 """
 import logging
 import os
@@ -62,8 +62,8 @@ def _girlfriend_phrase_words() -> Set[str]:
 
 
 def girlfriend_mode_available() -> bool:
-    """The special mode can only be activated once GIRLFRIEND_PHRASE is set."""
-    return bool(_girlfriend_phrase_words())
+    """The special mode needs GIRLFRIEND_PHRASE, and an admin to approve the requests."""
+    return bool(_girlfriend_phrase_words()) and bool(admin_user_ids())
 
 
 def is_girlfriend_answer(text: Optional[str]) -> bool:

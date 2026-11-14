@@ -55,8 +55,8 @@ fly secrets set OPENAI_API_KEY="tu_openai_key_aqui"
 fly secrets set --stage ADMIN_USER_IDS="tu_id_de_telegram" GIRLFRIEND_PHRASE="la frase de /novia"
 ```
 
-- `ADMIN_USER_IDS`: IDs de Telegram (separados por coma) que pueden usar `/admin`, `/subirSorpresa` y `/quitarNovia`. Sin la variable, nadie es administrador.
-- `GIRLFRIEND_PHRASE`: la respuesta a la pregunta de `/novia`. Sin la variable, el modo especial no se puede activar.
+- `ADMIN_USER_IDS`: IDs de Telegram (separados por coma) que pueden usar `/admin` y sus comandos, y que reciben los pedidos del modo especial para aprobarlos. Sin la variable, nadie es administrador.
+- `GIRLFRIEND_PHRASE`: la respuesta a la pregunta de `/novia`. Sin la frase o sin administradores, el modo especial no se puede pedir.
 
 Nunca escribas estos valores en el código ni en la documentación: el repositorio es público.
 
