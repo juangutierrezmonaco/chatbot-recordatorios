@@ -3,9 +3,12 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 import unicodedata
+import pytz
 from migrations import MigrationManager
 
 logger = logging.getLogger(__name__)
+
+BUENOS_AIRES = pytz.timezone('America/Argentina/Buenos_Aires')
 
 import os
 
@@ -269,11 +272,11 @@ def get_date_reminders(chat_id: int, target_date: datetime) -> List[Dict]:
     return reminders
 
 def get_historical_reminders(chat_id: int, status_filter: Optional[str] = None, limit: int = 20) -> List[Dict]:
-    """Get historical reminders (sent/cancelled) for a chat."""
+    """Get historical reminders (sent/cancelled/failed) for a chat."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    if status_filter and status_filter in ['sent', 'cancelled']:
+    if status_filter and status_filter in ['sent', 'cancelled', 'failed']:
         cursor.execute('''
             SELECT id, text, datetime, status
             FROM reminders
@@ -282,11 +285,11 @@ def get_historical_reminders(chat_id: int, status_filter: Optional[str] = None, 
             LIMIT ?
         ''', (chat_id, status_filter, limit))
     else:
-        # Get both sent and cancelled
+        # Sent, cancelled and the ones that could not be delivered
         cursor.execute('''
             SELECT id, text, datetime, status
             FROM reminders
-            WHERE chat_id = ? AND status IN ('sent', 'cancelled')
+            WHERE chat_id = ? AND status IN ('sent', 'cancelled', 'failed')
             ORDER BY datetime DESC
             LIMIT ?
         ''', (chat_id, limit))
@@ -306,14 +309,14 @@ def get_historical_reminders(chat_id: int, status_filter: Optional[str] = None, 
     return reminders
 
 def get_all_active_reminders() -> List[Dict]:
-    """Get all active reminders from all chats."""
+    """Active regular reminders from all chats. Important ones: get_active_important_reminders."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
         SELECT id, chat_id, text, datetime
         FROM reminders
-        WHERE status = 'active'
+        WHERE status = 'active' AND (is_important IS NULL OR is_important = FALSE)
     ''')
 
     rows = cursor.fetchall()
@@ -407,20 +410,32 @@ def cancel_all_reminders(chat_id: int) -> int:
     logger.info(f"Cancelled {affected_rows} reminders for chat {chat_id}")
     return affected_rows
 
-def mark_reminder_sent(reminder_id: int):
-    """Mark a reminder as sent."""
+def _finish_active_reminder(reminder_id: int, status: str) -> bool:
+    """Move an active reminder to a final status. False if it was no longer active."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
         UPDATE reminders
-        SET status = 'sent'
-        WHERE id = ?
-    ''', (reminder_id,))
+        SET status = ?
+        WHERE id = ? AND status = 'active'
+    ''', (status, reminder_id))
 
+    success = cursor.rowcount > 0
     conn.commit()
     conn.close()
-    logger.info(f"Reminder {reminder_id} marked as sent")
+
+    if success:
+        logger.info(f"Reminder {reminder_id} marked as {status}")
+    return success
+
+def mark_reminder_sent(reminder_id: int) -> bool:
+    """Mark an active reminder as sent."""
+    return _finish_active_reminder(reminder_id, 'sent')
+
+def mark_reminder_failed(reminder_id: int) -> bool:
+    """Mark an active reminder that could not be delivered (shown in /historial)."""
+    return _finish_active_reminder(reminder_id, 'failed')
 
 # Vault functions
 def add_vault_entry(chat_id: int, text: str, category: str = 'general') -> int:
@@ -969,15 +984,15 @@ def add_important_reminder(chat_id: int, text: str, datetime_obj: datetime, cate
     logger.info(f"Added important reminder {reminder_id} for chat {chat_id} with {repeat_interval}min interval")
     return reminder_id
 
-def complete_important_reminder(chat_id: int, reminder_id: int) -> bool:
-    """Mark an important reminder as completed (stops repetition)."""
+def complete_reminder(chat_id: int, reminder_id: int) -> bool:
+    """Mark an active reminder, regular or important, as completed."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
         UPDATE reminders
         SET status = 'completed'
-        WHERE id = ? AND chat_id = ? AND is_important = TRUE AND status = 'active'
+        WHERE id = ? AND chat_id = ? AND status = 'active'
     ''', (reminder_id, chat_id))
 
     success = cursor.rowcount > 0
@@ -985,20 +1000,20 @@ def complete_important_reminder(chat_id: int, reminder_id: int) -> bool:
     conn.close()
 
     if success:
-        logger.info(f"Completed important reminder {reminder_id} for chat {chat_id}")
+        logger.info(f"Completed reminder {reminder_id} for chat {chat_id}")
 
     return success
 
-def update_reminder_last_sent(reminder_id: int) -> bool:
-    """Update the last_sent timestamp for an important reminder."""
+def record_important_reminder_sent(reminder_id: int) -> bool:
+    """Record one more delivery of an important reminder: last_sent and times_sent."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
         UPDATE reminders
-        SET last_sent = ?
+        SET last_sent = ?, times_sent = COALESCE(times_sent, 0) + 1
         WHERE id = ? AND is_important = TRUE AND status = 'active'
-    ''', (datetime.now().isoformat(), reminder_id))
+    ''', (datetime.now(BUENOS_AIRES).isoformat(), reminder_id))
 
     success = cursor.rowcount > 0
     conn.commit()
@@ -1006,13 +1021,56 @@ def update_reminder_last_sent(reminder_id: int) -> bool:
 
     return success
 
+def _aware(value: Optional[str], naive_means_local: bool = False) -> Optional[datetime]:
+    """Parse an ISO timestamp into an aware datetime.
+
+    Naive reminder dates are Buenos Aires time. Old naive last_sent values were written
+    with the server clock, so naive_means_local reads them as the server's local time.
+    """
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is not None:
+        return parsed
+    return parsed.astimezone() if naive_means_local else BUENOS_AIRES.localize(parsed)
+
+def _reminder_for_scheduling(row) -> Dict:
+    """Row with: id, chat_id, text, datetime, is_important, repeat_interval, last_sent, times_sent, category."""
+    return {
+        'id': row[0],
+        'chat_id': row[1],
+        'text': row[2],
+        'datetime': _aware(row[3]),
+        'is_important': bool(row[4]),
+        'repeat_interval': row[5],
+        'last_sent': _aware(row[6], naive_means_local=True),
+        'times_sent': row[7] or 0,
+        'category': row[8] or 'general'
+    }
+
+def get_active_reminder(reminder_id: int) -> Optional[Dict]:
+    """An active reminder, regular or important, with what the scheduler needs; None if not active."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, chat_id, text, datetime, is_important, repeat_interval, last_sent, times_sent, category
+        FROM reminders
+        WHERE id = ? AND status = 'active'
+    ''', (reminder_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return _reminder_for_scheduling(row) if row else None
+
 def get_active_important_reminders() -> List[Dict]:
     """Get all active important reminders for scheduler processing."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT id, chat_id, text, datetime, repeat_interval, last_sent, category
+        SELECT id, chat_id, text, datetime, is_important, repeat_interval, last_sent, times_sent, category
         FROM reminders
         WHERE is_important = TRUE AND status = 'active'
         ORDER BY datetime
@@ -1021,26 +1079,7 @@ def get_active_important_reminders() -> List[Dict]:
     rows = cursor.fetchall()
     conn.close()
 
-    reminders = []
-    for row in rows:
-        reminder = {
-            'id': row[0],
-            'chat_id': row[1],
-            'text': row[2],
-            'datetime': datetime.fromisoformat(row[3]),
-            'repeat_interval': row[4],
-            'last_sent': datetime.fromisoformat(row[5]) if row[5] else None,
-            'category': row[6] or 'general'
-        }
-
-        # Ensure datetime has timezone info
-        if reminder['datetime'].tzinfo is None:
-            import pytz
-            reminder['datetime'] = pytz.timezone('America/Argentina/Buenos_Aires').localize(reminder['datetime'])
-
-        reminders.append(reminder)
-
-    return reminders
+    return [_reminder_for_scheduling(row) for row in rows]
 
 # Special girlfriend mode functions
 # A right answer to /novia leaves a request; an admin approves it (the mode is on) or

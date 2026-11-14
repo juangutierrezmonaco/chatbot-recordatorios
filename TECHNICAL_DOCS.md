@@ -216,18 +216,24 @@ def schedule_reminder(bot: Bot, chat_id: int, reminder_id: int, text: str, datet
 1. **Creación** → Guardado en BD + Programación en scheduler
 2. **Reinicio del bot** → Recarga automática desde BD
 3. **Envío** → Mensaje a usuario + Marcado como 'sent'
-4. **Cancelación** → Eliminación del scheduler + Marcado como 'cancelled'
+4. **Cancelación** → `/cancelar` o `/completar` (normales e importantes) eliminan el job y lo marcan 'cancelled' o 'completed'
 
 ### Persistencia de Jobs
-- **Al iniciar**: `load_pending_reminders()` recarga todos los jobs activos
-- **Gestión de expirados**: Jobs pasados se marcan como 'sent' automáticamente
-- **Tolerancia a fallos**: `misfire_grace_time=60` para recuperación
+Los jobs viven en memoria; la base es la fuente de verdad. Un recordatorio queda `active` hasta que se entrega (`sent`), se da por perdido (`failed`), se cancela o se completa.
+
+- **Al iniciar**: `load_pending_reminders()` agenda cada recordatorio activo una sola vez: los normales con `DateTrigger` y los importantes con `IntervalTrigger` (`get_all_active_reminders()` no incluye importantes).
+- **Vencidos durante una caída**: los normales se envían apenas arranca el bot, con "Llega con demora: era para el …". Los importantes siguen desde su último envío (`last_sent` + intervalo) o arrancan ya si nunca se enviaron.
+- **Sin descartes por demora**: `misfire_grace_time=None`. Si el bot estuvo ocupado, el envío sale tarde (y lo aclara a partir de 2 minutos) en vez de perderse.
+- **Antes de enviar**: el job verifica que el recordatorio siga activo; si se canceló o completó, no envía (y el importante deja de repetirse).
+- **Fallos de envío**: si el usuario bloqueó al bot o el chat no existe (`Forbidden`, `BadRequest`), queda `failed`. Otros errores (red, Telegram caído) se reintentan a los 1, 5 y 15 minutos; después queda `failed`. Los importantes reintentan en la siguiente repetición. `/historial fallidos` los muestra.
+- **Mensajes durante una caída**: `drop_pending_updates=False`, así los mensajes que llegan durante un deploy se responden al volver.
 
 ### 🌙 Resumen Nocturno
 - **Job recurrente**: `schedule_daily_summary()` registra un `CronTrigger` diario a las 22:00 (America/Argentina/Buenos_Aires) con id `daily_summary`
 - **Envío**: `send_daily_summary()` consulta `db.get_all_active_reminders_for_date()` para el día siguiente, agrupa por `chat_id` y envía un mensaje por usuario (formato HTML, texto escapado)
 - **Alcance**: incluye recordatorios activos normales e importantes (marcados con 🔥); excluye enviados y cancelados. Los usuarios sin recordatorios para mañana no reciben mensaje
-- **Robustez**: un error enviando a un chat no corta el envío al resto; `misfire_grace_time=600` + `coalesce=True` por si el bot estaba ocupado o reiniciando a esa hora
+- **Robustez**: un error enviando a un chat no corta el envío al resto; `misfire_grace_time=3600` + `coalesce=True` por si el bot estaba ocupado a esa hora
+- **Caída a las 22:00**: cada resumen enviado guarda la noche en `app_state` (`last_daily_summary`). Si el bot arranca entre las 22:00 y la medianoche sin el resumen de esa noche, lo manda al arrancar
 
 ## 🔥 Recordatorios Importantes
 
@@ -267,9 +273,10 @@ def schedule_important_reminder(reminder_id: int, datetime_obj: datetime, repeat
 #### Flujo de Recordatorios Importantes
 1. **Creación** → `/importante` parsea intervalo y programa repetición
 2. **Primer envío** → A la hora programada inicia la repetición
-3. **Repetición** → Cada X minutos hasta ser completado
-4. **Completado** → `/completar` cancela job y marca status='completed'
-5. **Persistencia** → `last_sent` actualizado en cada envío
+3. **Repetición** → Cada X minutos hasta ser completado, con un tope de 50 avisos (`MAX_IMPORTANT_REPETITIONS`): el último lo dice y el recordatorio queda 'sent'
+4. **Completado** → `/completar` o `/cancelar` eliminan el job y lo marcan 'completed' o 'cancelled'
+5. **Persistencia** → `last_sent` (con zona horaria) y `times_sent` (migración 14) se actualizan en cada envío
+6. **Formato** → el mensaje va en HTML con el texto escapado, así cualquier carácter llega
 
 #### Diferenciación Visual
 - **En listas**: 🔥 #123 - fecha (cada 10min)
@@ -282,8 +289,9 @@ def schedule_important_reminder(reminder_id: int, datetime_obj: datetime, repeat
 ```python
 # db.py - Funciones especializadas
 def add_important_reminder(chat_id, text, datetime_obj, category, repeat_interval) -> int
-def complete_important_reminder(chat_id, reminder_id) -> bool
-def update_reminder_last_sent(reminder_id) -> bool
+def complete_reminder(chat_id, reminder_id) -> bool          # normales e importantes
+def record_important_reminder_sent(reminder_id) -> bool       # last_sent y times_sent
+def get_active_reminder(reminder_id) -> Optional[Dict]       # lo que necesita el scheduler
 def get_active_important_reminders() -> List[Dict]
 ```
 
